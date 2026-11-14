@@ -264,6 +264,25 @@ export function deleteAsset(id: string): void {
   db().prepare("DELETE FROM assets WHERE id = ?").run(id);
 }
 
+/**
+ * A stored file's bytes replaced in place (same id, path, address and type), its size recorded again: a run's result the
+ * server finishes before the run is done (a crop to the aspect ratio asked). Written beside it first, then moved over it.
+ */
+export function rewriteAsset(id: string, data: Buffer): Asset | null {
+  const a = getAsset(id);
+  if (!a) return null;
+  const abs = absolutePath(a.relPath);
+  const next = `${abs}.${nanoid(6)}.part`;
+  try {
+    fs.writeFileSync(next, data);
+    fs.renameSync(next, abs);
+  } finally {
+    fs.rmSync(next, { force: true });
+  }
+  db().prepare("UPDATE assets SET size = ? WHERE id = ?").run(data.length, id);
+  return { ...a, size: data.length };
+}
+
 /** Resolve a relative path inside FILES_DIR, refusing traversal. */
 export function absolutePath(relPath: string): string {
   const abs = path.resolve(FILES_DIR, relPath);

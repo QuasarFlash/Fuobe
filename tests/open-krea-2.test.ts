@@ -136,8 +136,8 @@ describe("Krea 2 graphs", () => {
     expect(wf["85"].inputs).toMatchObject({ prompt: "", image: ["72", 0], image_b: ["90", 0] });
     expect(wf["79"].inputs).toMatchObject({ source_latent: ["73", 0], source_latent_b: ["92", 0], source_image: ["72", 0], source_image_b: ["90", 0], target_latent: ["82", 0], ref_boost: 4, ref_boost_a: 1, fit_mode: "fit" });
     expect(wf["71"].inputs).toMatchObject({ lora_name: "krea2_general_edit_v2.safetensors", strength_model: 1 });
-    // "auto" keeps the photo's 4:3 at about 1 MP, on the 16-pixel grid.
-    expect(wf["82"].inputs).toMatchObject({ width: 1184, height: 880 });
+    // "auto" keeps the photo's 4:3 on the 16-pixel grid, its shorter side at Krea 2's least (1024).
+    expect(wf["82"].inputs).toMatchObject({ width: 1360, height: 1024 });
     expect(wf["53"].inputs).toMatchObject({ seed: 7, steps: 8, cfg: 1, sampler_name: "euler", scheduler: "simple" });
     const tall = await prepare("krea2-edit-general", { prompt: "x", images: ["tall.png"], aspectRatio: "auto", resolution: "1K" }, "edit");
     expect((tall["82"].inputs.width as number) < (tall["82"].inputs.height as number)).toBe(true);

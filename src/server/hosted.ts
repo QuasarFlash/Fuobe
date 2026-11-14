@@ -1,6 +1,6 @@
 import "server-only";
 import { getModel } from "@/lib/catalog";
-import { computeDimensions, fitCanvas } from "@/lib/comfy";
+import { computeDimensions, fitCanvas, workflowCanvas } from "@/lib/comfy";
 import { requestWorkflowId } from "@/lib/comfy-variants";
 import { h3Canvas, isH3Graph } from "@/lib/h3-prompt";
 import { pictureCanvas } from "@/lib/openjutsu-graphs";
@@ -534,10 +534,9 @@ function workflowSize(req: GenerationRequest, endpoint: string, modelId: string)
     const follows = !asked || asked === "auto" || (h3 && !!b.image);
     const shape = follows && src ? `${src.width}:${src.height}` : asked === "auto" ? undefined : asked;
     if (h3) return h3Canvas(shape);
-    const multiple = Number(manifest.limits?.dimensionMultiple ?? 16);
-    const dims = computeDimensions(shape, req.params?.resolution ?? model?.defaults?.resolution, { width: Number(d.width ?? 1024), height: Number(d.height ?? 1024) }, multiple);
-    const k = Math.min(1, maxW / dims.width, maxH / dims.height);
-    return { width: Math.max(multiple, Math.floor((dims.width * k) / multiple) * multiple), height: Math.max(multiple, Math.floor((dims.height * k) / multiple) * multiple) };
+    // The canvas the composer binds (its trained size, comfy.ts workflowCanvas); a crop after it makes the saved picture smaller.
+    const { width, height } = workflowCanvas(manifest, shape, req.params?.resolution ?? model?.defaults?.resolution);
+    return { width, height };
   }
   if (!src) return null;
   let size: Size = { ...src };

@@ -412,6 +412,15 @@ async function main() {
     if (frameStep) defaults.frameStep = frameStep;
     Object.assign(defaults, spec.defaults || {});
 
+    // ---- trained canvases: each on the graph's grid and inside its limits
+    for (const [tier, list] of Object.entries(spec.sizes?.tiers || {})) {
+      for (const [w, h] of list) {
+        const m = limits.dimensionMultiple || 16;
+        if (w % m || h % m) errs.push(`sizes ${tier} ${w}x${h}: not on the ${m} px grid`);
+        if (w > (limits.maxWidth ?? Infinity) || h > (limits.maxHeight ?? Infinity)) errs.push(`sizes ${tier} ${w}x${h}: past maxWidth / maxHeight`);
+      }
+    }
+
     // ---- models
     const userModelTargets = new Set(
       Object.entries(bindings).filter(([k]) => USER_MODEL_KEYS.has(k)).flatMap(([, ts]) => ts.map((t) => `${t.node}.${t.input}`)),
@@ -500,6 +509,8 @@ async function main() {
       outputs: spec.outputs,
       defaults,
       limits,
+      // The canvases the model was trained on (src/lib/comfy.ts TrainedSizes): the app renders one and crops to the ratio asked.
+      ...(spec.sizes && { sizes: spec.sizes }),
       models: [...models.values()],
       customNodes,
       vramGb: spec.vramGb,

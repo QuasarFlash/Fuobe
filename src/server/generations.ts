@@ -146,7 +146,7 @@ import { modelToFinish, startModelFinish, startTurntable, stopModelFinish, type 
 import { stopPreviews, tickPreviews } from "./model3d-preview";
 import { finishTask, pathOnWorker, poolFinishes3d, startWorkerModelFinish, stopWorkerFinish } from "./computer/finish";
 import { PATH_FPS, PATH_FRAMES } from "@/lib/camera-path";
-import { cropPicture, isCropWindow } from "./crop-picture";
+import { askedCrop, cropPicture, cropSavedToRatio, isCropWindow } from "./crop-picture";
 import { convertMask, decodePng, encodePng } from "./png";
 import { engineMode, getSetting, runFailureDetail, withCandidates, withoutCandidates } from "./settings";
 import { blockedForAccounts, discardBody, fetchRemoteToFile, RemoteFetchError } from "./remote-fetch";
@@ -4768,6 +4768,17 @@ async function pollOne(r: Row): Promise<void> {
         outputs.push({ url: o.url, kind: o.kind ?? r.kind, ...inlineText(o.text, o.meta), ...(o.draftId ? { draftId: o.draftId } : {}) });
         console.warn(`[fuobe] could not save output for ${r.id}: ${(e as Error).message}`);
       }
+    }
+  }
+  // A picture rendered at the model's trained size nearest the shape asked is cropped to that shape (comfy.ts
+  // workflowCanvas): the composer named the centre to keep (meta.cropTo). A crop that fails keeps the picture as made.
+  const keep = askedCrop(ctx.meta);
+  if (keep) {
+    for (const [i, o] of outputs.entries()) {
+      outputs[i] = await cropSavedToRatio(o, keep).catch((e: unknown) => {
+        console.warn(`[fuobe] could not crop output for ${r.id}: ${(e as Error).message}`);
+        return o;
+      });
     }
   }
   // Ideogram 4's grey "blocked by safety filter" card is no picture (src/server/safety-card.ts): it is left out of the

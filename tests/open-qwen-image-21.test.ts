@@ -119,9 +119,9 @@ describe("Qwen-Image 2.1 graphs as Fuobe sends them", () => {
     expect(ofClass(wf, "UNETLoader")[0][1].inputs.unet_name).toBe("qwen_image_2.1_int8_convrot.safetensors");
     expect(ofClass(wf, "CLIPLoader")[0][1].inputs).toMatchObject({ clip_name: "qwen3vl_8b_int8_convrot.safetensors", type: "qwen_image" });
     expect(savedFrom(wf, manifest)).toBe("SplitImageWithAlpha");
-    // 2K in 16:9 is 2720x1536 on the grid, kept within 2048 in its shape.
+    // 2K in 16:9 is its native 2752x1536 (the trained sizes in the manifest).
     const wide = await prepare("qwen-image-21-t2i", { prompt: "x", aspectRatio: "16:9", resolution: "2K" }, "t2i");
-    expect([at(wide.workflow, wide.manifest, "width")[0], at(wide.workflow, wide.manifest, "height")[0]]).toEqual([2048, 1152]);
+    expect([at(wide.workflow, wide.manifest, "width")[0], at(wide.workflow, wide.manifest, "height")[0]]).toEqual([2752, 1536]);
     const tall = await prepare("qwen-image-21-t2i", { prompt: "x", aspectRatio: "3:4", resolution: "1.5K" }, "t2i");
     const [w, h] = [Number(at(tall.workflow, tall.manifest, "width")[0]), Number(at(tall.workflow, tall.manifest, "height")[0])];
     expect([w % 32, h % 32]).toEqual([0, 0]);

@@ -14,7 +14,6 @@ import {
   asrLanguage,
   bypassNode,
   bypassReference,
-  computeDimensions,
   fitCanvas,
   computeFrames,
   dropBranch,
@@ -37,6 +36,7 @@ import {
   tagMetaBatch,
   whisperLanguage,
   withLoad3dImages,
+  workflowCanvas,
   type BindingKey,
   type CaptionCue,
   type ComfyWorkflow,
@@ -608,8 +608,9 @@ export async function composeWorkflow(endpointTemplate: string, input: GenInput,
   // References (Pika H3 Flex Ref2VA) are not frames: the aspect ratio asked for holds ("auto" takes Image 1's shape).
   const asFrames = h3 && (ctx.op === "i2v" || ctx.op === "flf2v" || (!!b.image && manifest.expand !== "references"));
   const aspectRatio = asFrames || (h3 && ctx.op === "avatar") ? "auto" : (followClip && !input.aspectRatio) || followDriver ? "auto" : input.aspectRatio;
+  // The centre the saved picture is cropped to (a trained canvas of another shape than the one asked).
+  let cropTo: { width: number; height: number } | undefined;
   if (b.width || b.height) {
-    const multiple = Number(manifest.limits?.dimensionMultiple ?? 16);
     // With motion paths the frame keeps the start image's shape, so the paths need no cropping;
     // "auto" keeps the source clip's shape when its header told us.
     const srcAspect = (extra.motionPaths as MotionPaths | undefined)?.aspect;
@@ -621,13 +622,12 @@ export async function composeWorkflow(endpointTemplate: string, input: GenInput,
       // H3's own canvas (ComfyUI's adapt_canvas): 768 px on the short side, at most 768 × 1344, multiples of 32.
       Object.assign(values, h3Canvas(shape));
     } else {
-      const dims = computeDimensions(shape, input.resolution, { width: Number(d.width ?? 1024), height: Number(d.height ?? 1024) }, multiple);
-      // Respect the workflow's size limits while keeping the aspect ratio.
-      const maxW = Number(manifest.limits?.maxWidth ?? Infinity);
-      const maxH = Number(manifest.limits?.maxHeight ?? Infinity);
-      const k = Math.min(1, maxW / dims.width, maxH / dims.height);
-      values.width = Math.max(multiple, Math.floor((dims.width * k) / multiple) * multiple);
-      values.height = Math.max(multiple, Math.floor((dims.height * k) / multiple) * multiple);
+      // The model's trained canvas nearest the shape asked (manifest `sizes`), inside the workflow's limits; one that isn't
+      // that shape is cropped to it once saved (meta.cropTo, generations.ts).
+      const canvas = workflowCanvas(manifest, shape, input.resolution);
+      values.width = canvas.width;
+      values.height = canvas.height;
+      cropTo = canvas.crop;
     }
   }
   // An end card appended to an ad (video-append-endcard): the card is encoded at the ad's own size and frame rate,
@@ -1190,6 +1190,7 @@ export async function composeWorkflow(endpointTemplate: string, input: GenInput,
   if (b.width && b.height && (extra.width !== undefined || extra.height !== undefined)) {
     const [w, h] = [Number(values.width), Number(values.height)];
     if (w > 0 && h > 0 && Number.isFinite(w * h)) Object.assign(values, fitCanvas(w, h, manifest.limits));
+    cropTo = undefined;
   }
   if (audio2 && ctx.op !== "dialogue" && ctx.op !== "voice-change") values.audio2 = audio2;
   // Soundtrack mix: a silent bed as long as the video, so neither track cuts the other short.
@@ -1435,6 +1436,7 @@ export async function composeWorkflow(endpointTemplate: string, input: GenInput,
       ...(metaBatch ? { metaBatch: true } : {}),
       ...(b.seed && typeof values.seed === "number" ? { seed: values.seed } : {}),
       ...(reviewInputs ? { reviewInputs } : {}),
+      ...(cropTo ? { cropTo } : {}),
     },
   };
 }

@@ -116,6 +116,8 @@ export interface ManifestWorkflow {
   outputs: ManifestOutput[];
   defaults: Record<string, number | string | boolean>;
   limits?: Record<string, number>;
+  /** The canvases the model was trained on (workflowCanvas picks from them): absent, any canvas computeDimensions makes. */
+  sizes?: TrainedSizes;
   models: ManifestModel[];
   customNodes: { name: string; repo: string }[];
   vramGb?: number | string;
@@ -305,6 +307,129 @@ export function computeDimensions(
   const area = (resolution && RES_AREA[resolution]) || dw * dh;
   const height = Math.sqrt(area / ratio);
   return { width: roundTo(height * ratio, multiple), height: roundTo(height, multiple) };
+}
+
+/**
+ * The canvases a model was trained on (a workflow's manifest `sizes`). `tiers`: the exact sizes per resolution tier, each
+ * [width, height], both orientations listed; a tier it doesn't list takes the nearest listed one by area (a 1.5K ask on a
+ * model trained at about 1.7 MP renders those sizes). Or a range, on the canvas computeDimensions makes: `maxMegapixels`
+ * (the area at most, 1 MP = 1,000,000 px), `minSide` (the shorter side at least), `maxSide` (the longer side at most).
+ */
+export interface TrainedSizes {
+  tiers?: Record<string, [number, number][]>;
+  minSide?: number;
+  maxSide?: number;
+  maxMegapixels?: number;
+}
+
+/**
+ * The canvas a workflow renders. `crop`: when the canvas is the trained shape nearest to the aspect ratio asked (not that
+ * ratio), the centre of the result the run keeps, which has the ratio asked (the server crops the saved picture to it).
+ */
+export interface WorkflowCanvas {
+  width: number;
+  height: number;
+  crop?: { width: number; height: number };
+}
+
+/** Within 1% of the ratio asked counts as that ratio (a canvas on the model's grid is rarely exact): no crop. */
+const RATIO_TOLERANCE = 0.01;
+
+const ratioGap = (a: number, b: number) => Math.abs(Math.log(a / b));
+
+/**
+ * The centre crop of a width × height picture that has the aspect ratio `ratio` (the largest such area), or undefined
+ * when the picture has that ratio already (within 1%).
+ */
+export function cropToRatio(width: number, height: number, ratio: number): { width: number; height: number } | undefined {
+  if (!(width > 0 && height > 0 && ratio > 0) || ratioGap(width / height, ratio) <= Math.log(1 + RATIO_TOLERANCE)) return undefined;
+  return width / height > ratio ? { width: Math.min(width, Math.round(height * ratio)), height } : { width, height: Math.min(height, Math.round(width / ratio)) };
+}
+
+/** The listed tier nearest to `area` (by the mean area of its sizes, on a log scale). */
+function nearestTier(tiers: Record<string, [number, number][]>, area: number): [number, number][] | undefined {
+  let best: [number, number][] | undefined;
+  let gap = Infinity;
+  for (const sizes of Object.values(tiers)) {
+    if (!sizes.length) continue;
+    const mean = sizes.reduce((sum, [w, h]) => sum + w * h, 0) / sizes.length;
+    const g = ratioGap(mean, area);
+    if (g < gap) [best, gap] = [sizes, g];
+  }
+  return best;
+}
+
+/**
+ * The trained canvas for an aspect ratio and a resolution tier (TrainedSizes), or null when the model's sizes don't change
+ * what computeDimensions makes: no `sizes`, or a range the canvas is inside already.
+ */
+export function trainedDimensions(
+  sizes: TrainedSizes | undefined,
+  ratio: number,
+  resolution: string | undefined,
+  defaults: { width: number; height: number },
+  multiple = 16,
+): { width: number; height: number } | null {
+  if (!sizes || !(ratio > 0)) return null;
+  const area = (resolution && RES_AREA[resolution]) || defaults.width * defaults.height;
+  const tiers = sizes.tiers && Object.keys(sizes.tiers).length ? sizes.tiers : undefined;
+  if (tiers) {
+    const list = (resolution && tiers[resolution]?.length ? tiers[resolution] : undefined) ?? nearestTier(tiers, area);
+    if (!list?.length) return null;
+    // The size whose shape is nearest the ratio asked (the first listed of equals).
+    const [width, height] = list.reduce((best, s) => (ratioGap(s[0] / s[1], ratio) < ratioGap(best[0] / best[1], ratio) ? s : best));
+    return { width, height };
+  }
+  const maxArea = sizes.maxMegapixels ? sizes.maxMegapixels * 1e6 : Infinity;
+  let changed = area > maxArea;
+  let w = Math.sqrt(Math.min(area, maxArea) * ratio);
+  let h = Math.sqrt(Math.min(area, maxArea) / ratio);
+  const scale = (k: number) => {
+    [w, h, changed] = [w * k, h * k, true];
+  };
+  if (sizes.minSide && Math.min(w, h) < sizes.minSide) scale(sizes.minSide / Math.min(w, h));
+  if (sizes.maxSide && Math.max(w, h) > sizes.maxSide) scale(sizes.maxSide / Math.max(w, h));
+  // Both bounds can't hold at this shape (21:9 inside 1024-2048): the shorter side stays at its least, and the result is
+  // cropped to the ratio asked.
+  if (sizes.minSide && Math.min(w, h) < sizes.minSide) {
+    if (w < h) w = sizes.minSide;
+    else h = sizes.minSide;
+  }
+  if (!changed) return null;
+  let width = roundTo(w, multiple);
+  let height = roundTo(h, multiple);
+  // The grid never takes a side past a bound.
+  const { minSide, maxSide } = sizes;
+  if (minSide) [width, height] = [width, height].map((v) => (v < minSide ? Math.ceil(minSide / multiple) * multiple : v)) as [number, number];
+  if (maxSide) [width, height] = [width, height].map((v) => (v > maxSide ? Math.max(multiple, Math.floor(maxSide / multiple) * multiple) : v)) as [number, number];
+  return { width, height };
+}
+
+/**
+ * The canvas a workflow renders for an aspect ratio and a resolution tier, as every caller sizes it (the composer, and the
+ * run's size for limits and prices): its trained size when the manifest lists `sizes`, else computeDimensions on the
+ * workflow's default area; on its grid, scaled down whole inside its maxWidth / maxHeight. A trained canvas whose shape
+ * isn't the ratio asked carries the centre `crop` that is. A workflow without `sizes` (or a canvas inside its range)
+ * renders what it always did, uncropped.
+ */
+export function workflowCanvas(
+  manifest: Pick<ManifestWorkflow, "defaults" | "limits" | "sizes">,
+  aspectRatio: string | undefined,
+  resolution: string | undefined,
+): WorkflowCanvas {
+  const d = manifest.defaults ?? {};
+  const defaults = { width: Number(d.width ?? 1024), height: Number(d.height ?? 1024) };
+  const multiple = Number(manifest.limits?.dimensionMultiple ?? 16);
+  const asked = aspectRatio ? parseRatio(aspectRatio) : null;
+  const trained = trainedDimensions(manifest.sizes, asked || defaults.width / defaults.height, resolution, defaults, multiple);
+  const dims = trained ?? computeDimensions(aspectRatio, resolution, defaults, multiple);
+  const maxW = Number(manifest.limits?.maxWidth ?? Infinity);
+  const maxH = Number(manifest.limits?.maxHeight ?? Infinity);
+  const k = Math.min(1, maxW / dims.width, maxH / dims.height);
+  const width = Math.max(multiple, Math.floor((dims.width * k) / multiple) * multiple);
+  const height = Math.max(multiple, Math.floor((dims.height * k) / multiple) * multiple);
+  const crop = trained && asked ? cropToRatio(width, height, asked) : undefined;
+  return { width, height, ...(crop && { crop }) };
 }
 
 /**

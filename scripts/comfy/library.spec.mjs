@@ -914,6 +914,7 @@ const qwen21Tier = (op, tier, base, extra) => ({
   bindings: { ...base.bindings, seed: [b('70', 'noise_seed')], vae: [b('3', 'vae_name')], ...(tier === 'fast' && { sigmas: [b('73', 'sigmas')] }) },
   outputs: [{ node: base.output ?? '90', kind: 'image' }],
   ...(base.limits && { limits: base.limits }),
+  ...(base.sizes && { sizes: base.sizes }),
   ...(base.packs && { packs: base.packs }),
   vramGb: 20,
   optionalModels: [QWEN21_CLEAN_VAE],
@@ -945,6 +946,36 @@ const OJ_H3_LICENCE =
   'commercial use above US$20M yearly revenue needs MiniMax\'s written authorization; show "MiniMax H3" on the product\'s interface; no outputs used to improve other AI models · ' +
   'Qwen3-VL 8B describer Apache-2.0 · SAM 3.1 under Meta\'s SAM License · graphs from D3voz/openjutsu (MIT) · Context Loop nodes GPL-3.0, Fantastic PromptBuilder MIT, H3 OneClick Swap MIT';
 
+// ---- Trained canvases (manifest `sizes`, src/lib/comfy.ts TrainedSizes): what each model was trained on, so a run renders
+// one of them and the app crops the result to the aspect ratio asked when none has that shape.
+const bothWays = (sizes) => sizes.flatMap(([w, h]) => (w === h ? [[w, h]] : [[w, h], [h, w]]));
+// Qwen-Image 2.1: native about 4 MP (2048x2048, 2400x1792, 2528x1696, 2752x1536); 1K and 1.5K are the same shapes at about
+// 1 MP and 2.3 MP on its 32 px grid.
+const QWEN21_SIZES = {
+  tiers: {
+    '1K': bothWays([[1024, 1024], [1152, 864], [1248, 832], [1376, 768]]),
+    '1.5K': bothWays([[1536, 1536], [1760, 1312], [1856, 1248], [2048, 1152]]),
+    '2K': bothWays([[2048, 2048], [2400, 1792], [2528, 1696], [2752, 1536]]),
+  },
+};
+// Qwen-Image (2512): the model card's aspect-ratio table.
+const QWEN2512_SIZES = { tiers: { '1K': bothWays([[1328, 1328], [1664, 928], [1472, 1104], [1584, 1056]]) } };
+// HiDream I1: its 1 MP training buckets.
+const HIDREAM_SIZES = { tiers: { '1K': bothWays([[1024, 1024], [1360, 768], [1168, 880], [1248, 832]]) } };
+// SDXL: its 1 MP training buckets on a 64 px grid.
+const SDXL_SIZES = { tiers: { '1K': bothWays([[1024, 1024], [1152, 896], [1216, 832], [1344, 768], [1536, 640]]) } };
+// MiniMax H3 Image: the shapes its card lists (1:1, 4:3, 3:2, 16:9, 21:9) at about 4 MP and 16 MP.
+const H3_IMAGE_SIZES = {
+  tiers: {
+    '2K': bothWays([[2048, 2048], [2368, 1760], [2496, 1664], [2720, 1536], [3136, 1344]]),
+    '4K': bothWays([[4096, 4096], [4736, 3552], [5024, 3360], [5472, 3072], [6272, 2688]]),
+  },
+};
+// Krea 2: the shorter side at least 1024 and the longer at most 2048.
+const KREA2_SIZES = { minSide: 1024, maxSide: 2048 };
+// FLUX.1: up to about 2 MP.
+const FLUX1_SIZES = { maxMegapixels: 2 };
+
 export const SPEC = [
   // =========================================================================
   // IMAGE
@@ -969,6 +1000,7 @@ export const SPEC = [
     },
     outputs: [{ node: '9', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: FLUX1_SIZES,
     vramGb: 24,
     notes: 'No negative prompt (cfg 1, distilled guidance). FluxGuidance node 1001 added so guidance is bindable (template implicit default is also 3.5). fp16 weights (23.8 GB) — ComfyUI offloads on 16-24 GB cards; set weight_dtype fp8 in node 194:46 for lower VRAM.',
   },
@@ -990,6 +1022,7 @@ export const SPEC = [
     },
     outputs: [{ node: '9', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: FLUX1_SIZES,
     vramGb: 16,
     notes: 'Photorealistic "opinionated" FLUX.1 dev fine-tune by Krea (fp8 scaled weights). Shares text encoders + ae.safetensors with flux1-dev-t2i.',
   },
@@ -1007,6 +1040,7 @@ export const SPEC = [
     },
     outputs: [{ node: '9', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: FLUX1_SIZES,
     vramGb: 24,
     notes: '4-step distilled, Apache-2.0 licence (commercial OK). Prompt goes to both CLIP-L and T5 fields of CLIPTextEncodeFlux. Guidance is ignored by schnell.',
   },
@@ -1123,6 +1157,7 @@ export const SPEC = [
     },
     outputs: [{ node: '60', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: QWEN2512_SIZES,
     vramGb: 24,
     notes: 'Best open model for in-image text rendering (EN/ZH). Native 1328x1328; recommended sizes 1664x928 (16:9), 928x1664 (9:16), 1472x1104 (4:3). 50 steps cfg 4 by default.',
   },
@@ -1144,6 +1179,7 @@ export const SPEC = [
     },
     outputs: [{ node: '60', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: QWEN2512_SIZES,
     vramGb: 24,
     notes: 'Official template with "Enable 4 Steps LoRA" on (Qwen-Image-2512-Lightning-4steps, cfg 1). ~10x faster than qwen-image-2512-t2i.',
   },
@@ -1183,6 +1219,7 @@ export const SPEC = [
     },
     outputs: [{ node: '9', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: HIDREAM_SIZES,
     vramGb: 24,
     notes: '17B MoE (fp8). Four text encoders incl. Llama-3.1-8B (fp8). Dev variant: 28 steps, cfg 1, lcm sampler; negative prompt has little effect at cfg 1.',
   },
@@ -1203,6 +1240,7 @@ export const SPEC = [
     },
     outputs: [{ node: '7', kind: 'image' }],
     limits: { maxWidth: 1536, maxHeight: 1536, dimensionMultiple: 8 },
+    sizes: SDXL_SIZES,
     vramGb: 8,
     notes: 'Lightweight baseline (single 6.9 GB checkpoint). Native 1024x1024 class resolutions. Default negative prompt replaced with a generic one.',
   },
@@ -1316,6 +1354,7 @@ export const SPEC = [
     },
     outputs: [{ node: '9', kind: 'image' }],
     limits: { maxWidth: 6272, maxHeight: 6272, dimensionMultiple: 32 },
+    sizes: H3_IMAGE_SIZES,
     // The Prompt helper's Qwen3.5 9B is needed only when it is on (its nodes are taken out otherwise).
     optionalModels: ['qwen3.5_9b_w4a8_gptq.safetensors'],
     vramGb: 32,
@@ -3626,6 +3665,7 @@ export const SPEC = [
     },
     outputs: [{ node: '29', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: KREA2_SIZES,
     vramGb: 20,
     license: 'Krea 2 Community License (free for individuals and small teams; enterprise terms above the thresholds); LoRA by Ostris under the same licence',
     notes:
@@ -3642,6 +3682,7 @@ export const SPEC = [
     },
     outputs: [{ node: '26', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: FLUX1_SIZES,
     vramGb: 20,
     license: 'USO LoRA/projector Apache-2.0, but the FLUX.1 [dev] base is NON-COMMERCIAL (outputs may be used commercially per the BFL licence; running it as a paid service is not)',
     notes: 'ByteDance USO style-only reference: each USOStyleReference stacks one more style image (CLIPVisionEncode + USOStyleReference pairs). 20 steps, guidance 3.5, cfg 1.',
@@ -3703,14 +3744,15 @@ export const SPEC = [
       prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')], seed: [b('6', 'seed')], steps: [b('6', 'steps')], vae: [b('3', 'vae_name')],
     },
     outputs: [{ node: '9', kind: 'image' }],
-    limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 32 },
+    limits: { maxWidth: 2752, maxHeight: 2752, dimensionMultiple: 32 },
+    sizes: QWEN21_SIZES,
     vramGb: 20,
     optionalModels: [QWEN21_CLEAN_VAE],
     license: `Qwen Research License Agreement (Qwen-Image 2.1): NON-COMMERCIAL, research and evaluation only${QWEN21_CLEAN_LICENCE}`,
     notes:
       'The Qwen-Image 2.1 text-to-image workflow, its subgraph flattened: int8 model, Qwen3-VL 8B int8 text encoder (type qwen_image), ' +
       'TextEncodeQwenImage21 (no negative, resolution 1024, no images), EmptyLatentImage, KSampler 25 steps, cfg 1, euler, simple, denoise 1. ' +
-      'Removed: the ResolutionSelector (width/height bind the latent, multiples of 32, native up to 2048x2048) and the SaveImageAdvanced (SaveImage after SplitImageWithAlpha, as the Qwen 2.1 VAE decodes four channels). ' +
+      'Removed: the ResolutionSelector (width/height bind the latent, multiples of 32; its native sizes go up to 2752x1536, listed in sizes) and the SaveImageAdvanced (SaveImage after SplitImageWithAlpha, as the Qwen 2.1 VAE decodes four channels). ' +
       'cfg 1: no negative prompt.' + QWEN21_CLEAN_NOTE,
   },
   {
@@ -3893,9 +3935,9 @@ export const SPEC = [
   // ---- Qwen-Image 2.1 in 2-6 steps (Options → Speed), the 2.1 Next-Scene LoRA, and a 16 GB route ---------------------------
   // Each speed graph is its base graph with one LoRA + ManualSigmas branch (qwen21Tier above); the provider picks it from
   // params.extra.speed (src/lib/comfy-variants.ts). Turbo is qwen-image-21-turbo-edit; Full is the base graph.
-  qwen21Tier('t2i', 'draft', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 32 } }),
-  qwen21Tier('t2i', 'fast', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 32 } }),
-  qwen21Tier('t2i', 'details', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 32 } }),
+  qwen21Tier('t2i', 'draft', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2752, maxHeight: 2752, dimensionMultiple: 32 }, sizes: QWEN21_SIZES }),
+  qwen21Tier('t2i', 'fast', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2752, maxHeight: 2752, dimensionMultiple: 32 }, sizes: QWEN21_SIZES }),
+  qwen21Tier('t2i', 'details', { title: 'Qwen-Image 2.1 Text to Image', capability: 't2i', bindings: { prompt: [b('4', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')] }, output: '9', limits: { maxWidth: 2752, maxHeight: 2752, dimensionMultiple: 32 }, sizes: QWEN21_SIZES }),
   qwen21Tier('edit', 'draft', { title: 'Qwen-Image 2.1 Image Edit (up to 4 references)', capability: 'edit', bindings: { prompt: [b('30', 'prompt')], image: [b('10', 'image')], image2: [b('11', 'image')], image3: [b('12', 'image')], image4: [b('13', 'image')] }, limits: { maxWidth: 2048, maxHeight: 2048 } }),
   qwen21Tier('edit', 'fast', { title: 'Qwen-Image 2.1 Image Edit (up to 4 references)', capability: 'edit', bindings: { prompt: [b('30', 'prompt')], image: [b('10', 'image')], image2: [b('11', 'image')], image3: [b('12', 'image')], image4: [b('13', 'image')] }, limits: { maxWidth: 2048, maxHeight: 2048 } }),
   qwen21Tier('edit', 'details', { title: 'Qwen-Image 2.1 Image Edit (up to 4 references)', capability: 'edit', bindings: { prompt: [b('30', 'prompt')], image: [b('10', 'image')], image2: [b('11', 'image')], image3: [b('12', 'image')], image4: [b('13', 'image')] }, limits: { maxWidth: 2048, maxHeight: 2048 } }),
@@ -3957,7 +3999,8 @@ export const SPEC = [
       prompt: [b('5', 'prompt')], width: [b('5', 'width')], height: [b('5', 'height')], seed: [b('6', 'seed')], steps: [b('6', 'steps')], vae: [b('3', 'vae_name')],
     },
     outputs: [{ node: '90', kind: 'image' }],
-    limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 32 },
+    limits: { maxWidth: 2752, maxHeight: 2752, dimensionMultiple: 32 },
+    sizes: QWEN21_SIZES,
     vramGb: 16,
     optionalModels: [QWEN21_CLEAN_VAE],
     requiredModels: ['adapter_v12.safetensors'],
@@ -4087,6 +4130,7 @@ export const SPEC = [
     },
     outputs: [{ node: '29', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: KREA2_SIZES,
     vramGb: 20,
     license: 'Krea 2 Community License (free under US$1M yearly revenue; enterprise terms above it); Krea2-realism-V2 LoRA MIT',
     notes:
@@ -4102,6 +4146,7 @@ export const SPEC = [
     bindings: { prompt: [b('6', 'text')], width: [b('5', 'width')], height: [b('5', 'height')], seed: [b('3', 'seed')], steps: [b('3', 'steps')] },
     outputs: [{ node: '29', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: KREA2_SIZES,
     vramGb: 20,
     license: 'Krea 2 Community License (free under US$1M yearly revenue; enterprise terms above it)',
     notes:
@@ -4119,6 +4164,7 @@ export const SPEC = [
     },
     outputs: [{ node: '29', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: KREA2_SIZES,
     vramGb: 20,
     license:
       'Krea 2 Community License (free under US$1M yearly revenue; enterprise terms above it); the Krea 2 General Edit V2 LoRA is NON-COMMERCIAL (commercial use needs a licence from its author)',
@@ -4140,6 +4186,7 @@ export const SPEC = [
     },
     outputs: [{ node: '29', kind: 'image' }],
     limits: { maxWidth: 2048, maxHeight: 2048, dimensionMultiple: 16 },
+    sizes: KREA2_SIZES,
     vramGb: 20,
     license:
       'Krea 2 Community License (free under US$1M yearly revenue; enterprise terms above it); the Krea 2 Identity Edit V2 LoRA is NON-COMMERCIAL (commercial use needs a licence from its author)',
