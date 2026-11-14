@@ -63,6 +63,7 @@ import { ADD_KEY_HEADER } from "@/lib/your-keys";
 import type { Place } from "@/lib/place-name";
 import { placeFor, placeOfAccount } from "./place-name";
 import { rememberedPlace } from "./run-on";
+import { siteFallbackOn } from "./site-fallback";
 
 export { poolCardRefuses };
 
@@ -538,7 +539,7 @@ export function poolRequest(req: GenerationRequest, p: Pick<Policy, "limits"> | 
  * and every run this install's GPUs wouldn't take (hosted runs closed to it, a model or a kind not offered, LoRAs,
  * inputs, a step no worker takes, 3D) goes to its own GPU, even while that GPU doesn't answer. Only a run this install's
  * GPUs would take, that named no place, whose own GPU doesn't answer, is asked about (never moved there, and charged,
- * unasked). A run that goes to this install's GPUs is never moved to its own GPU because they are busy, away or being
+ * unasked), unless the account said yes to running there automatically when its GPU can't: then it goes there. A run that goes to this install's GPUs is never moved to its own GPU because they are busy, away or being
  * updated, or because the billing service went quiet: it waits in line for them.
  *
  * One order (the place a run names, then what only one place can run, then the account's own pick, then the policy):
@@ -604,8 +605,9 @@ export async function decidePlace(account: Account, asked: GenerationRequest, wi
     if (ownFallback) return OWN;
     return gateRefusal(gate, placeFor(p));
   }
-  // Its own GPU didn't answer the check: asked, never moved to this install's GPUs (and charged) without a word.
-  if (ownOffline) return { kind: "refuse", refusal: askPlace(placeFor(p)) };
+  // Its own GPU didn't answer the check: asked, never moved to this install's GPUs (and charged) without a word, unless
+  // the account said yes to running there automatically when its GPU can't (site-fallback.ts).
+  if (ownOffline && !siteFallbackOn(account.id)) return { kind: "refuse", refusal: askPlace(placeFor(p)) };
   return { kind: "pool", planned, policy: p, steps: gate.steps ? pricedSteps(gate.steps) : undefined, req, capped, light: lightRun(gate.steps) };
 }
 
@@ -1086,7 +1088,8 @@ export async function decideToolPlace(account: Account, steps: ToolRunStep[], wi
     if (ownFallback) return OWN;
     return gateRefusal(gate, placeFor(p));
   }
-  if (ownOffline) return { kind: "refuse", refusal: askPlace(placeFor(p)) };
+  // (As decidePlace: asked, unless the account said yes to running there automatically when its GPU can't.)
+  if (ownOffline && !siteFallbackOn(account.id)) return { kind: "refuse", refusal: askPlace(placeFor(p)) };
   return { kind: "pool", policy: p, main: gate.main, steps: pricedSteps(gate.rows), light: lightRun(gate.rows) };
 }
 

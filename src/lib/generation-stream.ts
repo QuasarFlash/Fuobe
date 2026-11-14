@@ -186,11 +186,12 @@ export function sharePagesById(prev: unknown, next: unknown): unknown {
  * How often a list with runs on their way asks for them again (null: none on its way, so it doesn't). The live stream
  * brings every change at once; polling is the safety net that makes a missed change (a stream cut by an update of the
  * site, a sleeping laptop, a proxy holding a stream open after its server went away) show within seconds anyway.
- * A run just sent is asked about most often; one that has been going a long while, less.
+ * A run just sent is asked about most often; one that has been going a long while, less. A failed run on its way to
+ * this studio's GPUs by itself (`moving`) counts as on its way: the run made there shows up the same way.
  */
-export function pollDelay(items: readonly Pick<Generation, "status" | "createdAt">[] | undefined, live: boolean, now?: number): number | null {
+export function pollDelay(items: readonly (Pick<Generation, "status" | "createdAt"> & Partial<Pick<Generation, "moving">>)[] | undefined, live: boolean, now?: number): number | null {
   let youngest = -Infinity;
-  for (const g of items ?? []) if ((g.status === "queued" || g.status === "running") && g.createdAt > youngest) youngest = g.createdAt;
+  for (const g of items ?? []) if ((g.status === "queued" || g.status === "running" || g.moving) && g.createdAt > youngest) youngest = g.createdAt;
   if (youngest === -Infinity) return null;
   // The clock is read only for a run on its way: a list read while a page is prerendered never reads it.
   const age = Math.max(0, (now ?? Date.now()) - youngest);

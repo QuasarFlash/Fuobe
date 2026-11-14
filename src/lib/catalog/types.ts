@@ -1578,6 +1578,13 @@ export interface Generation {
   waiting?: RunTrouble & { until?: number };
   /** Failed or stopped before its paid provider took the job (no external id): the card says "Not billed", not its price. */
   notBilled?: true;
+  /**
+   * A run that failed on the account's own GPU and went to this install's GPUs by itself (the account's "run there
+   * automatically when your GPU can't", src/server/site-fallback.ts): the id of the run made there. Its card says so.
+   */
+  movedTo?: string;
+  /** The same, while that run is being made (a moment): its card says where it is going, and the page keeps looking. */
+  moving?: true;
   /** Ran on this install's GPUs (hosted runs), not the account's own. */
   place?: "pool";
   /** The billing service's words for what a run on this install's GPUs costs ("7 units"); shown when it succeeded. */

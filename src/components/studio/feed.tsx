@@ -28,9 +28,9 @@ import { runStage, shownMaking, STAGE_WORDS, tileBox, tileCount } from "@/lib/ru
 import { RunAura, RunRing } from "./run-visuals";
 import { reducedMotion } from "@/lib/ui-motion";
 import { knownPlace } from "@/lib/place-name";
-import { runOnSiteAction } from "@/lib/diagnose";
 import { retryRequest } from "@/lib/run-place";
-import { shownTroubleActions, siteRunOf, siteRunRequest } from "@/lib/site-run";
+import { shownTroubleActions } from "@/lib/site-run";
+import { useSiteRun } from "@/components/gpu/use-site-run";
 import { placeholdersOn } from "@/lib/demo-mode";
 import { useSoulFinish } from "./soul-finish";
 import { elapsed, formatCost, leftLabel, notePace, ratioValue, timeAgo, timeLeft } from "@/lib/format";
@@ -276,10 +276,9 @@ export function FailedTile({ g, ratio, onRetry, onReuse }: { g: Generation; rati
   const catalog = useOptionalCatalog();
   const trouble = g.status === "failed" ? g.trouble : undefined;
   // Hosted runs: a run that failed on the person's own GPU or key can run once on this studio's GPUs instead, when they
-  // take it (on its key: its open version).
+  // take it (on its key: its open version); one that went there by itself says so.
   const site = usePlaceName();
-  const pool = useStatus().data?.viewer?.pool;
-  const siteRun = trouble ? siteRunOf(g, !!site, pool) : null;
+  const siteRun = useSiteRun(g);
   const actions = trouble ? shownTroubleActions(trouble.actions, !!site) : [];
   // A run on this studio's GPUs that couldn't finish: one plain sentence (the server's), nothing technical.
   const poolFailed = g.place === "pool" && g.status === "failed";
@@ -287,8 +286,9 @@ export function FailedTile({ g, ratio, onRetry, onReuse }: { g: Generation; rati
   const shape = Math.max(ratio, FAILED_MIN_SHAPE);
   const narrow = shape * 224 < NARROW_TILE_PX;
   const [retrying, setRetrying] = useState(false);
-  // Retry can't help a known ComfyUI problem or a missing model file: the same run would stop the same way.
-  const retryHelps = !NO_RETRY_CAUSES.includes(trouble?.cause ?? "");
+  // Retry can't help a known ComfyUI problem or a missing model file: the same run would stop the same way. Nor is it
+  // offered for a run that went to this studio's GPUs by itself (it runs there now).
+  const retryHelps = !NO_RETRY_CAUSES.includes(trouble?.cause ?? "") && !siteRun.moved;
   return (
     <div className="flex h-full max-w-full flex-col justify-between overflow-hidden rounded-xl border bg-muted/40 p-3" style={{ aspectRatio: shape }} data-stage={g.status}>
       <div className="flex min-h-0 flex-col gap-1 overflow-hidden">
@@ -298,6 +298,9 @@ export function FailedTile({ g, ratio, onRetry, onReuse }: { g: Generation; rati
             {/* The cleaned technical reason, when this studio shows it (Settings → Failed runs). */}
             <TroubleDetails details={g.errorDetail ? `Details: ${g.errorDetail}` : undefined} className="min-h-0" />
           </>
+        ) : siteRun.moved ? (
+          // Its own GPU couldn't make it, so it went to this studio's GPUs by itself: the new run's card shows its progress.
+          <p className={cn("shrink-0 text-[13px] leading-snug font-medium break-words", narrow ? "line-clamp-4" : "line-clamp-5")}>{siteRun.moved}</p>
         ) : (
           <>
             <p className="shrink-0 text-[13px] font-medium">{g.status === "canceled" ? "Canceled" : "Couldn't generate this one"}</p>
@@ -318,12 +321,12 @@ export function FailedTile({ g, ratio, onRetry, onReuse }: { g: Generation; rati
           reuse={feed?.reuse}
           model={catalog?.getModel(g.modelId)}
           className="mt-2 shrink-0"
-          actions={siteRun && site ? [runOnSiteAction(site.label), ...actions] : actions}
+          actions={siteRun.actions(actions)}
           skip={["retry"]}
           max={narrow ? 2 : 3}
           compact
           context="run"
-          more={{ onRunOnSite: () => siteRun && create.mutate(siteRunRequest(g, siteRun), { onError: (e) => toastError(e) }) }}
+          more={siteRun.more}
         />
       )}
       {/* A run on this studio's GPUs that didn't come out right: another model, a tap away, beside Retry. */}

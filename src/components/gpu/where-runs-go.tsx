@@ -1,20 +1,25 @@
 "use client";
 
 import { RunOnList } from "@/components/studio/run-on";
+import { Switch } from "@/components/ui/switch";
 import { useStatus } from "@/lib/api";
 import { placeOf } from "@/lib/place-name";
 import { placeRows } from "@/lib/run-place";
 import { useSetRunOn } from "@/lib/run-on";
+import { useSetSiteFallback } from "@/lib/site-fallback";
+import { siteFallbackLabel } from "@/lib/site-run";
 import { cn } from "@/lib/utils";
 
 /**
  * Settings → Your GPU, at the top while hosted runs are on: "Where your runs go", the same rows as the Run on list (this
- * studio's GPUs, the account's GPU, its key), kept for every device. With nothing of its own, one line instead. Nothing
- * while hosted runs are off (self-hosters keep today's page).
+ * studio's GPUs, the account's GPU, its key), kept for every device. With nothing of its own, one line instead. With a GPU
+ * of its own, the switch for running on this studio's GPUs automatically when that GPU can't (src/server/site-fallback.ts).
+ * Nothing while hosted runs are off (self-hosters keep today's page).
  */
 export function WhereRunsGo({ className }: { className?: string }) {
   const v = useStatus().data?.viewer;
   const setRunOn = useSetRunOn();
+  const setFallback = useSetSiteFallback();
   if (!v?.hosted || v.kind !== "account") return null;
   const place = placeOf(v.placeName);
   const keys = v.paidAllowed === false ? [] : (v.keys ?? []);
@@ -34,6 +39,12 @@ export function WhereRunsGo({ className }: { className?: string }) {
             disabled={setRunOn.isPending}
             onPick={(id) => setRunOn.mutate({ runOn: id, ...(id === "key" && provider && { key: provider }) })}
           />
+          {v.gpu?.connected && (
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-accent">
+              <span>{siteFallbackLabel(place.text)}</span>
+              <Switch checked={v.siteFallback === "on"} disabled={setFallback.isPending} onCheckedChange={(on) => setFallback.mutate(on)} aria-label={siteFallbackLabel(place.text)} />
+            </label>
+          )}
         </>
       ) : (
         <p className="px-2.5 text-[12px] text-muted-foreground">Your runs go to {place.text}. Connect a GPU or add a key to have a choice.</p>

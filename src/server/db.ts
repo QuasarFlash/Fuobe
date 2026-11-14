@@ -1326,6 +1326,8 @@ function open(): Database.Database {
   }
   // Where an account's runs go, as it picked (run-on.ts): read only while hosted runs are on, empty otherwise.
   db.exec(RUN_ON_TABLES);
+  // Runs that go to this install's GPUs when the account's own GPU can't make them (site-fallback.ts): empty otherwise.
+  db.exec(SITE_FALLBACK_TABLES);
   // Runs on this install's GPUs waiting to enter the line (pool-holds.ts): empty unless hosted runs are on.
   db.exec(POOL_HOLD_TABLES);
   // A run held until the billing service says ready keeps its card (pool-holds.ts ready_json), for tables made before it.
@@ -1469,6 +1471,28 @@ const RUN_ON_TABLES = `CREATE TABLE IF NOT EXISTS account_run_on (
     run_key TEXT CHECK (run_key IS NULL OR run_key IN ('fal', 'replicate')),
     updated_at INTEGER NOT NULL
   );`;
+
+/**
+ * "Run on {Place} automatically when your GPU can't" (site-fallback.ts), while hosted runs are on. account_site_fallback:
+ * the account's answer (a row: it was asked, or set it in Settings; `auto` 1 yes, 0 not now). site_fallback_runs: a run
+ * that failed on the account's own GPU (`run_id`) and the run made for it on this install's GPUs (`new_id`), once per
+ * failed run: `state` "sending" while it is made, "moved" once it is, "refused" when it wasn't taken. Empty on every
+ * install where hosted runs are off. Not a numbered migration.
+ */
+const SITE_FALLBACK_TABLES = `CREATE TABLE IF NOT EXISTS account_site_fallback (
+    account_id TEXT PRIMARY KEY,
+    auto INTEGER NOT NULL CHECK (auto IN (0, 1)),
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS site_fallback_runs (
+    run_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('sending', 'moved', 'refused')),
+    new_id TEXT,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS site_fallback_runs_new ON site_fallback_runs(new_id) WHERE new_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS site_fallback_runs_account ON site_fallback_runs(account_id);`;
 
 /**
  * Runs on this install's GPUs that are made but wait to enter the line (pool-holds.ts): one row per row of the run, all

@@ -157,6 +157,7 @@ import { FILE_TROUBLE_WORDS, POOL_WORDS, RELAY_WORDS } from "@/lib/relay";
 import { isPoolRunWords } from "@/lib/run-progress";
 import { heldLine, placeInLine, poolOnWorkers, poolRunsProvider, poolWaitMs, requestFileKinds, runOnPool, type FileKind } from "./hosted";
 import { hostedRunsOn } from "./hosted-switch";
+import { claimSiteFallback, movedFields } from "./site-fallback";
 import { catalogVersion } from "./computer/catalog-version";
 import { gettingReady, poolLane, queueOfGeneration, type LinePlace } from "./computer/pool";
 import { ownerGpuMiss } from "./runs-here";
@@ -290,6 +291,8 @@ export function toGeneration(r: Row): Generation {
     ...(pool && (r.status === "failed" || r.status === "canceled") && failureDetailOf(r)),
     ...(r.status === "failed" && r.fix_json && !pool && { fix: parseFix(r.fix_json) }),
     ...(r.status === "failed" && r.fix_json && !pool && parseTrouble(r.fix_json)),
+    // Failed on its own GPU and gone to this install's GPUs by itself (site-fallback.ts): the run made there, or on its way.
+    ...(r.status === "failed" && !pool && stored.account && movedFields(r.id)),
     // Waiting for its own GPU or key to come back: why, the buttons that help, and until when (never the owner's note).
     ...(r.status === "queued" && !r.external_id && r.external_meta_json && !pool && waitingOf(r)),
     // Failed or stopped before a paid provider took the job (a refused key, an empty balance): nothing was billed. Not
@@ -2977,6 +2980,9 @@ function failRun(id: string, e: unknown, trouble: Diagnosis | undefined, account
   if (!done) return false;
   if (fix) markStale(account ? `acct:${account}` : "install");
   if (own && account && facts) ownEvent(id, account, e, trouble, facts, "failed");
+  // The account said yes to "run on {Place} automatically when your GPU can't": a GPU's failure goes there now, made by
+  // this server (the page may be closed). Claimed here, so the run reads "going to {Place}" as soon as it reads failed.
+  if (claimSiteFallback(id, account, trouble)) void import("./site-fallback-run").then((m) => m.sendSoon(id));
   return true;
 }
 

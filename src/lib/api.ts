@@ -44,6 +44,7 @@ import { BILLING_EVENT, BILLING_HEADER, freshBody, refreshPriceChecks, type Bill
 import { knownPlace, notePlaceName, placeOf, type Place } from "./place-name";
 import { noteServiceCopy, type ServiceCopy } from "./service-copy";
 import { ENGINE_KEY, ENGINE_SLOT_KEY, engineSlot, SHARED_SLOT, slotToCache, storedEngine, type EngineSlot, type SlotFacts } from "./engine-pref";
+import type { SiteFallback } from "./site-run";
 
 /** What the status strip says of a GPU that didn't answer (src/server/account-gpu.ts VisitorTrouble). */
 export type GpuTroubleView = Pick<Diagnosis, "cause" | "words" | "actions" | "retryable" | "details">;
@@ -1056,6 +1057,11 @@ export interface StatusInfo {
      * one-time note (src/components/studio/place-intro.tsx) says where runs go now. Only with `hosted`.
      */
     ranOwn?: true;
+    /**
+     * Its answer to "Run on {Place} automatically when your GPU can't" (src/server/site-fallback.ts): "on" or "off". Absent:
+     * never asked, so the question comes once after its first "Run on {Place}". Only with `hosted`.
+     */
+    siteFallback?: SiteFallback;
     /** The words a preset card shows when its run would go to this studio's GPUs ("Try free"), from the server. None: no words. */
     cardText?: string;
     /** What this studio's GPUs keep off, for a viewer with no GPU of its own: its pickers leave it out (src/lib/pool-rules.ts). */

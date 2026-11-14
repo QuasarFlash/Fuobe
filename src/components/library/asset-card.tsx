@@ -17,6 +17,9 @@ import { cn } from "@/lib/utils";
 import { PlaceholderChip } from "@/components/demo-mode";
 import { TroubleActions, TroubleDetails } from "@/components/gpu/trouble";
 import { RunTroubleActions } from "@/components/gpu/run-trouble-actions";
+import { useMovedWords, useSiteRun } from "@/components/gpu/use-site-run";
+import { usePlaceName } from "@/lib/api";
+import { shownTroubleActions } from "@/lib/site-run";
 import { DRAG_TYPE } from "./folders";
 import { ReviewBadge } from "./review";
 import { autoLine } from "@/lib/auto-image";
@@ -100,6 +103,8 @@ export function StatusCover({ g, small, actionable }: { g: Generation; small?: b
     );
   }
   if (small) return <div className="size-full border bg-muted/40" />;
+  // The account's own Library: "Run on {Place}" where its feed offers it, and the words of a run that went there.
+  if (actionable && !pool && g.status === "failed") return <OwnFailedCover g={g} />;
   const trouble = g.status === "failed" ? g.trouble : undefined;
   return (
     <div className="flex size-full flex-col justify-between gap-2 border bg-muted/40 p-3" data-stage={g.status}>
@@ -124,6 +129,50 @@ export function StatusCover({ g, small, actionable }: { g: Generation; small?: b
         ))}
     </div>
   );
+}
+
+/**
+ * A failed run in the account's own Library, off this studio's GPUs: what came back and the way out, with "Run on
+ * {Place}" first where its feed offers it (src/components/gpu/use-site-run.ts); a run that went there by itself says so.
+ */
+function OwnFailedCover({ g }: { g: Generation }) {
+  const siteRun = useSiteRun(g);
+  const site = usePlaceName();
+  const trouble = g.trouble;
+  return (
+    <div className="flex size-full flex-col justify-between gap-2 border bg-muted/40 p-3" data-stage={g.status}>
+      <div className="flex min-h-0 flex-col gap-1 overflow-hidden">
+        {siteRun.moved ? (
+          <p className="line-clamp-5 shrink-0 text-[13px] leading-snug font-medium break-words">{siteRun.moved}</p>
+        ) : (
+          <>
+            <p className="shrink-0 text-[13px] font-medium">{"Couldn't generate this one"}</p>
+            {g.error && <p className="line-clamp-3 text-[12px] leading-snug break-words text-muted-foreground @[16rem]:line-clamp-4">{g.error}</p>}
+          </>
+        )}
+        {/* The details line goes first when the card is small. */}
+        {trouble && <TroubleDetails details={trouble.details} className="hidden @[16rem]:block" />}
+      </div>
+      {trouble && (
+        <RunTroubleActions g={g} className="shrink-0" actions={siteRun.actions(shownTroubleActions(trouble.actions, !!site))} more={siteRun.more} skip={["retry"]} max={2} compact context="run" />
+      )}
+    </div>
+  );
+}
+
+/** A failed run's buttons in a Library row, with "Run on {Place}" first where its feed offers it. */
+function RowFailedActions({ g }: { g: Generation }) {
+  const siteRun = useSiteRun(g);
+  const site = usePlaceName();
+  return (
+    <RunTroubleActions g={g} className="mt-1" actions={siteRun.actions(shownTroubleActions(g.trouble?.actions ?? [], !!site))} more={siteRun.more} skip={["retry"]} max={1} compact context="run" />
+  );
+}
+
+/** A failed run's line in a Library row once it went to this studio's GPUs by itself (nothing otherwise). */
+function RowMovedLine({ g }: { g: Generation }) {
+  const moved = useMovedWords(g);
+  return moved ? <p className="truncate text-[12px] text-muted-foreground">{moved}</p> : null;
 }
 
 function Cover({ g, fit }: { g: Generation; fit: boolean }) {
@@ -309,13 +358,13 @@ export const AssetCard = memo(function AssetCard({
           {!stack && autoLine(g) && <p className="truncate text-[12px] text-muted-foreground">{autoLine(g)}</p>}
           {!stack && g.request.notice && <p className="truncate text-[12px] text-muted-foreground">{g.request.notice}</p>}
           {/* An account's own GPU or key: the way out, in the row (its thumbnail is too small for it). */}
-          {!stack && !trashed && (g.status === "failed" ? g.trouble : g.status === "queued" ? g.waiting : undefined) && (
-            <RunTroubleActions g={g} className="mt-1" actions={(g.status === "failed" ? g.trouble : g.waiting)!.actions} skip={["retry"]} max={1} compact context={g.status === "failed" ? "run" : "other"} />
-          )}
+          {!stack && !trashed && g.status === "failed" && g.place !== "pool" && <RowMovedLine g={g} />}
+          {!stack && !trashed && g.status === "failed" && g.trouble && <RowFailedActions g={g} />}
+          {!stack && !trashed && g.status === "queued" && g.waiting && <RunTroubleActions g={g} className="mt-1" actions={g.waiting.actions} skip={["retry"]} max={1} compact context="other" />}
         </div>
         {g.favorite && !stack && <Heart className="size-4 shrink-0 fill-highlight text-highlight" />}
         {stack && <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />}
-        {!stack && (g.status === "failed" || g.status === "canceled") && !trashed && (
+        {!stack && (g.status === "failed" || g.status === "canceled") && !trashed && !g.movedTo && !g.moving && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -383,7 +432,7 @@ export const AssetCard = memo(function AssetCard({
         )}
         <SelectDot selected={selected} visible={selecting} onToggle={(s) => api.toggle(entry.key, ids, s)} label={`Select ${title}`} />
         {actions}
-        {!stack && (g.status === "failed" || g.status === "canceled") && !trashed && !selecting && (
+        {!stack && (g.status === "failed" || g.status === "canceled") && !trashed && !selecting && !g.movedTo && !g.moving && (
           <button
             onClick={(e) => {
               e.stopPropagation();

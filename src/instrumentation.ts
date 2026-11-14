@@ -12,6 +12,10 @@ export async function register() {
   // Sign-in data: an older install's auth.json moves into the database now, before the first request.
   const { ensureAuthStore } = await import("./server/auth-store");
   ensureAuthStore();
+  // The server's own context, kept before the runner starts: a run that failed on its account's GPU is sent to this
+  // install's GPUs from it (site-fallback-run.ts), never as the failed run.
+  const { keepRootContext } = await import("./server/site-fallback-run");
+  keepRootContext();
   const { ensureRunner } = await import("./server/generations");
   ensureRunner();
   const { ensureTrashPurge } = await import("./server/library");
@@ -29,6 +33,9 @@ export async function register() {
   // Its runs waiting to enter the line on this install's GPUs (hosted runs) go with it too.
   const { clearHolds } = await import("./server/pool-holds");
   onAccountDeleted(clearHolds);
+  // Its answer to "run on {Place} automatically when your GPU can't", and its runs moved that way.
+  const { clearSiteFallback } = await import("./server/site-fallback");
+  onAccountDeleted(clearSiteFallback);
   // Faceless / Explainer renders whose narration was timed while the server was down continue with their scenes.
   const { ensureFacelessRunner } = await import("./server/faceless");
   ensureFacelessRunner();

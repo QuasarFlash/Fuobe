@@ -22,6 +22,8 @@ import { placeName } from "./place-name";
 import { helperKnown } from "./text-helper";
 import { poolOwnModels, poolOwnPresets, type PresetPress } from "./pool-own-setup";
 import { ranOwnFirst, runOnOf, type RunOn } from "./run-on";
+import { siteFallbackFor } from "./site-fallback";
+import type { SiteFallback } from "@/lib/site-run";
 import { poolRulesOf, type PoolRules, type PresetModel } from "@/lib/pool-rules";
 import { diagnoseAddress, diagnoseGpu, gpuHostOf, type Diagnosis, type GpuFailure, type GpuPlace, type GpuStage } from "@/lib/diagnose";
 
@@ -361,6 +363,11 @@ export interface VisitorView {
    */
   ranOwn?: true;
   /**
+   * Its answer to "Run on {Place} automatically when your GPU can't" (site-fallback.ts; only with `hosted`, only to that
+   * account): "on" or "off". Absent: never asked (the question comes once, after its first "Run on {Place}").
+   */
+  siteFallback?: SiteFallback;
+  /**
    * The words a preset card shows when its run would go to this install's GPUs (the billing service's policy, such as
    * "Try free"; with no service, "Try free": those runs are free). Absent: the cards show none.
    */
@@ -473,6 +480,8 @@ export async function visitorStatus(account: Account | null) {
         viewer.runOn = pick.runOn;
         if (pick.runKey) viewer.runKey = pick.runKey;
       } else if ((gpu || keys.length) && ranOwnFirst(account.id)) viewer.ranOwn = true;
+      const fallback = siteFallbackFor(account.id);
+      if (fallback) viewer.siteFallback = fallback;
     }
     // What this studio's GPUs keep off, the open models they can't run right now among it: shown in the pickers with
     // what the visitor needs to run them on its own setup. For every viewer, a GPU of its own or not: its runs go
