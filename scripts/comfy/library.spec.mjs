@@ -537,6 +537,7 @@ export const KNOWN_MODELS = {
   'mistral_3_small_flux2_fp8.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/mistral_3_small_flux2_fp8.safetensors' },
   'flux1-dev-int8-convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/AX1Y2JP/FLUX.1-dev-INT8-ConvRot/resolve/main/flux1-dev-int8-convrot.safetensors' },
   'ltx-2-19b-dev-fp4.safetensors': { folder: 'checkpoints', url: 'https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev-fp4.safetensors' },
+  'flux1-fill-dev-int8-convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/AX1Y2JP/FLUX.1-dev-INT8-ConvRot/resolve/main/flux1-fill-dev-int8-convrot.safetensors' },
   'krea2_turbo_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_int8_convrot.safetensors', variants: ['krea2_turbo_fp8_scaled.safetensors', 'krea2_turbo_bf16.safetensors'] },
   'qwen3vl_4b_fp8_scaled.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors', variants: ['qwen3vl_4b_int8_convrot.safetensors', 'qwen3vl_4b_bf16.safetensors'] },
   'krea2_style_reference.safetensors': { folder: 'loras', url: 'https://huggingface.co/Comfy-Org/Krea-2/resolve/main/loras/krea2_style_reference.safetensors' },
@@ -1512,6 +1513,7 @@ export const SPEC = [
   },
   {
     id: 'flux1-fill-inpaint',
+    optionalModels: ['flux1-fill-dev-int8-convrot.safetensors'],
     title: 'FLUX.1 Fill [dev] Inpaint',
     capability: 'inpaint',
     export: 'flux_fill_inpaint_example',
@@ -1535,6 +1537,7 @@ export const SPEC = [
   },
   {
     id: 'flux1-fill-outpaint',
+    optionalModels: ['flux1-fill-dev-int8-convrot.safetensors'],
     title: 'FLUX.1 Fill [dev] Outpaint',
     capability: 'outpaint',
     export: 'flux_fill_outpaint_example',

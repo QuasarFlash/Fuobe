@@ -130,6 +130,21 @@
       "files": {
         "checkpoints/ltx-2-19b-dev-fp8.safetensors": "checkpoints/ltx-2-19b-dev-fp4.safetensors"
       }
+    },
+    {
+      "id": "int8",
+      "gpuGen": {
+        "min": "8.0",
+        "max": "8.6"
+      },
+      "workflows": [
+        "flux1-fill-inpaint",
+        "flux1-fill-outpaint"
+      ],
+      "files": {
+        "diffusion_models/flux1-fill-dev.safetensors": "diffusion_models/flux1-fill-dev-int8-convrot.safetensors",
+        "text_encoders/t5xxl_fp16.safetensors": "text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"
+      }
     }
   ]
 }
