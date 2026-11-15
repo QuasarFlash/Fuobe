@@ -316,7 +316,7 @@
   },
   "672:594": {
     "inputs": {
-      "device": "gpu",
+      "device": "cpu",
       "dtype": "int8",
       "model": [
         "672:579",
