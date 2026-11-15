@@ -351,6 +351,28 @@ describe("the line hands out tickets inside each PC's ceiling", () => {
     expect(row(String((own.meta as { relay: string }).relay)).state).toBe("waiting");
   });
 
+  it("a lane's own clip limit: a longer job is never claimed there, and every PC's most says it", async () => {
+    const w = addWorker();
+    beat(w);
+    const allow = Object.fromEntries(Object.entries(pool.workerView(workerRow(w)).allow).map(([l, a]) => [l, l === LANE ? { ...a, maxSeconds: 5 } : a]));
+    pool.patchWorker(w.id, { allow });
+    expect(pool.workerView(workerRow(w)).allow[LANE]).toEqual({ delayMs: 0, maxSeconds: 5 });
+    expect(pool.workersMost("selftest-image").maxSeconds).toBe(5);
+    expect(pool.workersCanRun("selftest-image", { size: { megapixels: 1, seconds: 5, outputs: 1 } })).toBe(true);
+    expect(pool.workersCanRun("selftest-image", { size: { megapixels: 1, seconds: 8, outputs: 1 } })).toBe(false);
+    const mine = await accountTask();
+    const needs = JSON.parse(row(mine.id).needs_json!) as { size: { seconds: number } };
+    db().prepare("UPDATE relay_tasks SET needs_json = ? WHERE id = ?").run(JSON.stringify({ ...needs, size: { ...needs.size, seconds: 8 } }), mine.id);
+    expect(beat(w).claimableNow).toBe(0);
+    expect(claim(w)).toBeNull();
+    // Within it: claimed. A limit of 0 or none is no limit.
+    db().prepare("UPDATE relay_tasks SET needs_json = ? WHERE id = ?").run(JSON.stringify({ ...needs, size: { ...needs.size, seconds: 5 } }), mine.id);
+    expect(claim(w)?.id).toBe(mine.id);
+    pool.patchWorker(w.id, { allow: { ...allow, [LANE]: { delayMs: 0, maxSeconds: 0 } } });
+    expect(pool.workerView(workerRow(w)).allow[LANE]).toEqual({ delayMs: 0 });
+    expect(pool.workersMost("selftest-image").maxSeconds).toBeUndefined();
+  });
+
   it("a waiting task whose ticket was made for the catalog before an update gets its ticket made again, with its place kept", async () => {
     const { noteCatalogProcess, processStart, refreshTickets } = await import("@/server/computer/ticket-refresh");
     // The app process before the update said its catalog version when it ran.

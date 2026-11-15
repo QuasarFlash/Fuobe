@@ -25,6 +25,9 @@ import { cn } from "@/lib/utils";
 
 type Hours = { always: true } | { tz: string; days: Record<string, [string, string][]> };
 
+/** A lane a worker may run: how long a job waits before it takes it, and the longest clip it takes there (none: no limit). */
+type LaneAllow = { delayMs: number; maxSeconds?: number };
+
 interface WorkerView {
   id: string;
   name: string;
@@ -38,7 +41,7 @@ interface WorkerView {
   /** Its RAM guard (a server from before sends none). */
   ramGuard?: boolean;
   hours: Hours | null;
-  allow: Record<string, { delayMs: number }>;
+  allow: Record<string, LaneAllow>;
   /** Its pick order: above 0, it gets first pick of the jobs it can run while it is free (a server from before sends none). */
   pickOrder?: number;
   /** The workflows it takes only with every weight on its card, newest first (a server from before sends none). */
@@ -187,15 +190,15 @@ export const runnableLanes = (w: LaneSource): string[] => [...new Set([...w.lane
  * The lanes Allow all it can run allows: each one it can run any workflow of (a task goes only to a worker that can run
  * its own workflow, so a lane it runs part of is safe to allow), each keeping a wait it already had.
  */
-export function allowAllItCanRun(w: LaneSource, allow: Record<string, { delayMs: number }>): Record<string, { delayMs: number }> {
-  const next: Record<string, { delayMs: number }> = {};
+export function allowAllItCanRun(w: LaneSource, allow: Record<string, LaneAllow>): Record<string, LaneAllow> {
+  const next: Record<string, LaneAllow> = {};
   for (const lane of runnableLanes(w)) next[lane] = allow[lane] ?? { delayMs: 0 };
   return next;
 }
 
 const FIT_RANK = { all: 0, some: 1, none: 2 } as const;
 
-export function LanesEditor({ w, lanes, onSave }: { w: WorkerView; lanes: Lane[]; onSave: (allow: Record<string, { delayMs: number }>) => void }) {
+export function LanesEditor({ w, lanes, onSave }: { w: WorkerView; lanes: Lane[]; onSave: (allow: Record<string, LaneAllow>) => void }) {
   const [allow, setAllow] = useState(w.allow);
   // Every workflow first, then some of them, then none; by name within each.
   const sorted = [...lanes].sort((a, b) => FIT_RANK[laneFit(w, a.lane).kind] - FIT_RANK[laneFit(w, b.lane).kind] || a.label.localeCompare(b.label));
@@ -245,9 +248,27 @@ export function LanesEditor({ w, lanes, onSave }: { w: WorkerView; lanes: Lane[]
                     className="h-7 w-14"
                     inputMode="numeric"
                     value={String(Math.round((allow[l.lane]?.delayMs ?? 0) / 1000))}
-                    onChange={(e) => setAllow({ ...allow, [l.lane]: { delayMs: Math.max(0, Number(e.target.value) || 0) * 1000 } })}
+                    onChange={(e) => setAllow({ ...allow, [l.lane]: { ...allow[l.lane], delayMs: Math.max(0, Number(e.target.value) || 0) * 1000 } })}
                   />
                   s first
+                </label>
+              )}
+              {l.lane in allow && (
+                <label className="flex items-center gap-1 text-[12px] text-muted-foreground">
+                  clips up to
+                  <Input
+                    aria-label={`Longest clip for ${l.label}`}
+                    className="h-7 w-14"
+                    inputMode="decimal"
+                    placeholder="any"
+                    value={allow[l.lane]?.maxSeconds ? String(allow[l.lane]!.maxSeconds) : ""}
+                    onChange={(e) => {
+                      const most = Number(e.target.value);
+                      const { maxSeconds: _was, ...rest } = allow[l.lane] ?? { delayMs: 0 };
+                      setAllow({ ...allow, [l.lane]: { ...rest, ...(Number.isFinite(most) && most > 0 && { maxSeconds: most }) } });
+                    }}
+                  />
+                  s
                 </label>
               )}
             </li>

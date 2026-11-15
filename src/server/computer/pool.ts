@@ -171,9 +171,16 @@ export function slotFor(t: Pick<TaskRow, "slot" | "finish_json">, w: Pick<Worker
 
 interface Allow {
   delayMs: number;
+  /** The longest clip this worker takes in this lane, in seconds (none: as long as its PC's ceiling allows). */
+  maxSeconds?: number;
 }
 
 const allowOf = (w: WorkerRow) => json<Record<string, Allow>>(w.allow_json, {});
+/** Is the job longer than this worker takes in its lane (the lane's own clip limit)? */
+const pastLaneLimit = (allow: Record<string, Allow>, lane: string, size?: { seconds?: number } | null) => {
+  const most = allow[lane]?.maxSeconds;
+  return !!most && (size?.seconds ?? 0) > most + 1e-9;
+};
 /** The lanes and workflows its files let it run, and the requirements index they were worked out with (none: an older row). */
 /** `sets`: the file sets it has whole of each workflow with model variants (lanesFor). Lanes worked out without it: its own files only. */
 const capableOf = (w: Pick<WorkerRow, "lanes_json">) => json<{ lanes: string[]; workflows: string[]; index?: string; sets?: Record<string, (string | null)[]> }>(w.lanes_json, { lanes: [], workflows: [] });
@@ -1063,13 +1070,13 @@ function estOn(t: TaskRow, w: WorkerRow): number | null {
 
 /**
  * Why a worker can't run a task (fitWhy, fitSlotWhy), the first reason found: "pool" (not one of the task's pools),
- * "elsewhere" (sent to another worker), "stopped", "lane-off" (its lane isn't allowed there), "ceiling" (beyond what its
- * PC may ever run), "version" (its worker program or catalog doesn't take the job's ticket), "refused" (it refused the
- * job before), "files" (it hasn't the workflow's files), "run-files" (it hasn't the files the run adds), "memory" (too
- * little GPU memory, streaming from RAM counted), "finish" (no slot of it runs this finishing step), "delay" (its delays
- * haven't passed yet).
+ * "elsewhere" (sent to another worker), "stopped", "lane-off" (its lane isn't allowed there), "ceiling" (beyond what
+ * its PC may ever run), "clip" (longer than the clips its lane takes there), "version" (its worker program or catalog
+ * doesn't take the job's ticket), "refused" (it refused the job before), "files" (it hasn't the workflow's files),
+ * "run-files" (it hasn't the files the run adds), "memory" (too little GPU memory, streaming from RAM counted),
+ * "finish" (no slot of it runs this finishing step), "delay" (its delays haven't passed yet).
  */
-export type FitCode = "pool" | "elsewhere" | "stopped" | "lane-off" | "ceiling" | "version" | "refused" | "files" | "run-files" | "memory" | "finish" | "delay";
+export type FitCode = "pool" | "elsewhere" | "stopped" | "lane-off" | "ceiling" | "clip" | "version" | "refused" | "files" | "run-files" | "memory" | "finish" | "delay";
 
 /**
  * May this worker run this task: its pool, its lane allowed and capable, its PC's ceiling (the lanes or workflows it
@@ -1086,6 +1093,7 @@ function fitWhy(t: TaskRow, w: WorkerRow, now: number): FitCode | null {
   const cap = capableOf(w);
   const needs = json<Needs | null>(t.needs_json, null);
   if (ceilingProblem(ceilingOf(w), { workflowId: needs?.workflowId, lane, size: needs?.size })) return "ceiling";
+  if (pastLaneLimit(allow, lane, needs?.size)) return "clip";
   // A ticket made for another catalog than the worker's goes only to a worker that checks the graph itself
   // (GRAPH_PROTOCOL), with the ticket's graph fingerprint to check. One that found the graph changed gave the job back
   // (refusedBy, below) and isn't offered it again until it is updated.
@@ -1141,6 +1149,7 @@ export const FIT_WORDS: Record<Exclude<FitCode, "pool">, string> = {
   stopped: "stopped",
   "lane-off": "not allowed this kind of job",
   ceiling: "beyond what its PC may run",
+  clip: "takes shorter clips of this kind",
   version: "needs its worker program updated",
   refused: "refused it before",
   files: "lacks its model files",
@@ -1846,7 +1855,14 @@ export function workersHold(workflowId: string): boolean {
  * where one of them has no limit, and for a workflow none of them runs. Said before Run with a size they don't make.
  */
 export function workersMost(workflowId: string): { maxMegapixels?: number; maxSeconds?: number; maxOutputs?: number } {
-  const ceilings = ableWorkers(workflowId).map(ceilingOf);
+  const lane = poolLane(workflowId);
+  // Each worker's PC ceiling, its longest clip narrowed to its lane's own limit when it has one.
+  const ceilings = ableWorkers(workflowId).map((w): Ceiling | null => {
+    const c = ceilingOf(w);
+    const laneMost = allowOf(w)[lane]?.maxSeconds;
+    if (!laneMost) return c;
+    return { ...c, maxSeconds: c?.maxSeconds ? Math.min(c.maxSeconds, laneMost) : laneMost };
+  });
   const most = (k: "maxMegapixels" | "maxSeconds" | "maxOutputs"): number | undefined => {
     if (!ceilings.length || ceilings.some((c) => !c?.[k])) return undefined;
     return Math.max(...ceilings.map((c) => c![k]!));
@@ -1875,6 +1891,7 @@ function ableWorkers(workflowId: string | null, o: { size?: Needs["size"]; ticke
     const ceiling = ceilingOf(w);
     if (workflowId === null) return cap.workflows.some((id) => poolLane(id) in allow && insideCeiling(ceiling, { workflowId: id, lane: poolLane(id) }));
     if (!needs || !(lane! in allow) || !cap.workflows.includes(workflowId) || ceilingProblem(ceiling, { workflowId, lane, size: o.size })) return false;
+    if (pastLaneLimit(allow, lane!, o.size)) return false;
     if (o.files?.length && !hasFiles(inventoryOf(w), o.files)) return false;
     if (hasVariants(loadIndex(), workflowId)) return !!workerFiles(w, workflowId, bytesOf(o.files));
     return memoryFor(needs, w, bytesOf(o.files));
@@ -2519,7 +2536,11 @@ export function patchWorker(id: string, p: WorkerPatch, now = Date.now(), by = "
     for (const [lane, v] of Object.entries(p.allow as Record<string, unknown>)) {
       if (!/^[0-9a-f]{12}$|^small$/.test(lane)) throw new Error(`No such lane: ${lane}`);
       const delay = Number((v as { delayMs?: unknown })?.delayMs ?? 0);
-      allow[lane] = { delayMs: Number.isFinite(delay) && delay >= 0 ? Math.min(delay, 24 * 3_600_000) : 0 };
+      const most = Number((v as { maxSeconds?: unknown })?.maxSeconds ?? 0);
+      allow[lane] = {
+        delayMs: Number.isFinite(delay) && delay >= 0 ? Math.min(delay, 24 * 3_600_000) : 0,
+        ...(Number.isFinite(most) && most > 0 && { maxSeconds: Math.min(most, 86_400) }),
+      };
     }
     set.allow_json = JSON.stringify(allow);
   }
