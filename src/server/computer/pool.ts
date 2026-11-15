@@ -173,12 +173,23 @@ interface Allow {
   delayMs: number;
   /** The longest clip this worker takes in this lane, in seconds (none: as long as its PC's ceiling allows). */
   maxSeconds?: number;
+  /** Frames larger than this many megapixels... */
+  bigFrom?: number;
+  /** ...are taken in clips up to this many seconds (a 720p clip may be shorter than a 480p one). */
+  bigMaxSeconds?: number;
 }
 
 const allowOf = (w: WorkerRow) => json<Record<string, Allow>>(w.allow_json, {});
-/** Is the job longer than this worker takes in its lane (the lane's own clip limit)? */
-const pastLaneLimit = (allow: Record<string, Allow>, lane: string, size?: { seconds?: number } | null) => {
-  const most = allow[lane]?.maxSeconds;
+/** The longest clip a lane's own limits let a worker take at this frame size (undefined: no limit of the lane's own). */
+const laneMostSeconds = (a: Allow | undefined, megapixels?: number): number | undefined => {
+  if (!a) return undefined;
+  const big = a.bigFrom && a.bigMaxSeconds && (megapixels ?? 0) > a.bigFrom + 1e-9 ? a.bigMaxSeconds : undefined;
+  const limits = [a.maxSeconds, big].filter((x): x is number => !!x);
+  return limits.length ? Math.min(...limits) : undefined;
+};
+/** Is the job longer than this worker takes in its lane at its frame size (the lane's own clip limits)? */
+const pastLaneLimit = (allow: Record<string, Allow>, lane: string, size?: { seconds?: number; megapixels?: number } | null) => {
+  const most = laneMostSeconds(allow[lane], size?.megapixels);
   return !!most && (size?.seconds ?? 0) > most + 1e-9;
 };
 /** The lanes and workflows its files let it run, and the requirements index they were worked out with (none: an older row). */
@@ -1854,12 +1865,12 @@ export function workersHold(workflowId: string): boolean {
  * The largest job of a workflow any worker that may and can run it makes (its PC's ceiling), each limit apart: undefined
  * where one of them has no limit, and for a workflow none of them runs. Said before Run with a size they don't make.
  */
-export function workersMost(workflowId: string): { maxMegapixels?: number; maxSeconds?: number; maxOutputs?: number } {
+export function workersMost(workflowId: string, size?: { megapixels?: number }): { maxMegapixels?: number; maxSeconds?: number; maxOutputs?: number } {
   const lane = poolLane(workflowId);
-  // Each worker's PC ceiling, its longest clip narrowed to its lane's own limit when it has one.
+  // Each worker's PC ceiling, its longest clip narrowed to its lane's own limit (at this frame size) when it has one.
   const ceilings = ableWorkers(workflowId).map((w): Ceiling | null => {
     const c = ceilingOf(w);
-    const laneMost = allowOf(w)[lane]?.maxSeconds;
+    const laneMost = laneMostSeconds(allowOf(w)[lane], size?.megapixels);
     if (!laneMost) return c;
     return { ...c, maxSeconds: c?.maxSeconds ? Math.min(c.maxSeconds, laneMost) : laneMost };
   });
@@ -2537,9 +2548,13 @@ export function patchWorker(id: string, p: WorkerPatch, now = Date.now(), by = "
       if (!/^[0-9a-f]{12}$|^small$/.test(lane)) throw new Error(`No such lane: ${lane}`);
       const delay = Number((v as { delayMs?: unknown })?.delayMs ?? 0);
       const most = Number((v as { maxSeconds?: unknown })?.maxSeconds ?? 0);
+      const bigFrom = Number((v as { bigFrom?: unknown })?.bigFrom ?? 0);
+      const bigMost = Number((v as { bigMaxSeconds?: unknown })?.bigMaxSeconds ?? 0);
+      const pos = (n: number) => Number.isFinite(n) && n > 0;
       allow[lane] = {
         delayMs: Number.isFinite(delay) && delay >= 0 ? Math.min(delay, 24 * 3_600_000) : 0,
-        ...(Number.isFinite(most) && most > 0 && { maxSeconds: Math.min(most, 86_400) }),
+        ...(pos(most) && { maxSeconds: Math.min(most, 86_400) }),
+        ...(pos(bigFrom) && pos(bigMost) && { bigFrom: Math.min(bigFrom, 10_000), bigMaxSeconds: Math.min(bigMost, 86_400) }),
       };
     }
     set.allow_json = JSON.stringify(allow);

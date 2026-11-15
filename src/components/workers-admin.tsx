@@ -25,8 +25,11 @@ import { cn } from "@/lib/utils";
 
 type Hours = { always: true } | { tz: string; days: Record<string, [string, string][]> };
 
-/** A lane a worker may run: how long a job waits before it takes it, and the longest clip it takes there (none: no limit). */
-type LaneAllow = { delayMs: number; maxSeconds?: number };
+/**
+ * A lane a worker may run: how long a job waits before it takes it, the longest clip it takes there (none: no limit),
+ * and a shorter longest clip for frames larger than `bigFrom` megapixels.
+ */
+type LaneAllow = { delayMs: number; maxSeconds?: number; bigFrom?: number; bigMaxSeconds?: number };
 
 interface WorkerView {
   id: string;
@@ -198,8 +201,35 @@ export function allowAllItCanRun(w: LaneSource, allow: Record<string, LaneAllow>
 
 const FIT_RANK = { all: 0, some: 1, none: 2 } as const;
 
+/** A small number box that keeps what is typed ("0.", "0.5") and reports a number past 0, or undefined. */
+function NumberBox({ value, onValue, label, placeholder }: { value?: number; onValue: (n: number | undefined) => void; label: string; placeholder: string }) {
+  const [text, setText] = useState(value ? String(value) : "");
+  return (
+    <Input
+      aria-label={label}
+      className="h-7 w-14"
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value);
+        onValue(e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined);
+      }}
+    />
+  );
+}
+
 export function LanesEditor({ w, lanes, onSave }: { w: WorkerView; lanes: Lane[]; onSave: (allow: Record<string, LaneAllow>) => void }) {
   const [allow, setAllow] = useState(w.allow);
+  // The large-frame limit: a number past 0 sets each half, anything else clears it (both are needed to take effect).
+  const setLimit = (lane: string, k: "maxSeconds" | "bigFrom" | "bigMaxSeconds", v: number | undefined) =>
+    setAllow((was) => {
+      const next: LaneAllow = { ...(was[lane] ?? { delayMs: 0 }) };
+      if (v) next[k] = v;
+      else delete next[k];
+      return { ...was, [lane]: next };
+    });
   // Every workflow first, then some of them, then none; by name within each.
   const sorted = [...lanes].sort((a, b) => FIT_RANK[laneFit(w, a.lane).kind] - FIT_RANK[laneFit(w, b.lane).kind] || a.label.localeCompare(b.label));
   const runnable = runnableLanes(w).length;
@@ -254,22 +284,15 @@ export function LanesEditor({ w, lanes, onSave }: { w: WorkerView; lanes: Lane[]
                 </label>
               )}
               {l.lane in allow && (
-                <label className="flex items-center gap-1 text-[12px] text-muted-foreground">
+                <span className="flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
                   clips up to
-                  <Input
-                    aria-label={`Longest clip for ${l.label}`}
-                    className="h-7 w-14"
-                    inputMode="decimal"
-                    placeholder="any"
-                    value={allow[l.lane]?.maxSeconds ? String(allow[l.lane]!.maxSeconds) : ""}
-                    onChange={(e) => {
-                      const most = Number(e.target.value);
-                      const { maxSeconds: _was, ...rest } = allow[l.lane] ?? { delayMs: 0 };
-                      setAllow({ ...allow, [l.lane]: { ...rest, ...(Number.isFinite(most) && most > 0 && { maxSeconds: most }) } });
-                    }}
-                  />
+                  <NumberBox label={`Longest clip for ${l.label}`} placeholder="any" value={allow[l.lane]?.maxSeconds} onValue={(n) => setLimit(l.lane, "maxSeconds", n)} />
+                  s, above
+                  <NumberBox label={`Frame size for shorter clips on ${l.label}`} placeholder="MP" value={allow[l.lane]?.bigFrom} onValue={(n) => setLimit(l.lane, "bigFrom", n)} />
+                  MP up to
+                  <NumberBox label={`Longest clip of larger frames for ${l.label}`} placeholder="any" value={allow[l.lane]?.bigMaxSeconds} onValue={(n) => setLimit(l.lane, "bigMaxSeconds", n)} />
                   s
-                </label>
+                </span>
               )}
             </li>
           );

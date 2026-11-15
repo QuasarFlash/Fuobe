@@ -373,6 +373,30 @@ describe("the line hands out tickets inside each PC's ceiling", () => {
     expect(pool.workersMost("selftest-image").maxSeconds).toBeUndefined();
   });
 
+  it("a lane's shorter clip limit for larger frames: 480p runs long, 720p only short, and the most says it per size", async () => {
+    const w = addWorker();
+    beat(w);
+    const allow = Object.fromEntries(Object.entries(pool.workerView(workerRow(w)).allow).map(([l, a]) => [l, l === LANE ? { ...a, maxSeconds: 15.2, bigFrom: 0.5, bigMaxSeconds: 5.2 } : a]));
+    pool.patchWorker(w.id, { allow });
+    expect(pool.workerView(workerRow(w)).allow[LANE]).toEqual({ delayMs: 0, maxSeconds: 15.2, bigFrom: 0.5, bigMaxSeconds: 5.2 });
+    const run = (megapixels: number, seconds: number) => pool.workersCanRun("selftest-image", { size: { megapixels, seconds, outputs: 1 } });
+    expect(run(0.41, 15.08)).toBe(true);
+    expect(run(0.41, 20)).toBe(false);
+    expect(run(0.92, 5.17)).toBe(true);
+    expect(run(0.92, 10.13)).toBe(false);
+    expect(pool.workersMost("selftest-image").maxSeconds).toBe(15.2);
+    expect(pool.workersMost("selftest-image", { megapixels: 0.92 }).maxSeconds).toBe(5.2);
+    const mine = await accountTask();
+    const needs = JSON.parse(row(mine.id).needs_json!) as { size: { seconds: number; megapixels: number } };
+    db().prepare("UPDATE relay_tasks SET needs_json = ? WHERE id = ?").run(JSON.stringify({ ...needs, size: { ...needs.size, megapixels: 0.92, seconds: 10.13 } }), mine.id);
+    expect(claim(w)).toBeNull();
+    db().prepare("UPDATE relay_tasks SET needs_json = ? WHERE id = ?").run(JSON.stringify({ ...needs, size: { ...needs.size, megapixels: 0.41, seconds: 10.13 } }), mine.id);
+    expect(claim(w)?.id).toBe(mine.id);
+    // Half of the pair is no limit.
+    pool.patchWorker(w.id, { allow: { ...allow, [LANE]: { delayMs: 0, bigFrom: 0.5 } } });
+    expect(pool.workerView(workerRow(w)).allow[LANE]).toEqual({ delayMs: 0 });
+  });
+
   it("a waiting task whose ticket was made for the catalog before an update gets its ticket made again, with its place kept", async () => {
     const { noteCatalogProcess, processStart, refreshTickets } = await import("@/server/computer/ticket-refresh");
     // The app process before the update said its catalog version when it ran.
