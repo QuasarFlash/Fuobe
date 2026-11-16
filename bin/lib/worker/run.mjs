@@ -1342,6 +1342,10 @@ async function work(saved, deps, owner) {
             if (ports.length && (await localIdle(localFetch, ports))) {
               log(`Local ComfyUI work on port ${ports.join(", ")} runs nothing and keeps its models loaded: asking it to free its memory for the owner's job.`);
               await freeLocal(localFetch, ports);
+              // The reading from before the free is out of date: the next turn reads the GPU again, so the owner's job
+              // doesn't count the freed memory as local work still holding the GPU (and ask it for room after the job).
+              split = null;
+              lastGpuAt = -Infinity;
               roomAt = now();
               roomForOwner = true;
               ownerWaitSaid = false;
