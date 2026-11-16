@@ -11,6 +11,7 @@ import { runtimeFileKeys } from "@/lib/runtime-files";
 import { APPS, MODELS } from "@/lib/catalog";
 import { laneName, type LaneName } from "@/lib/lane-names";
 import { clock, hoursAt, parseHours, type Hours } from "@/lib/worker-hours";
+import { CAPACITY_GRACE_MS, type LaneLimit } from "@/lib/capacity";
 import { db } from "../db";
 import { indexKey, loadIndex } from "../gpu/index-file";
 import { hostedRunsOn } from "../hosted-switch";
@@ -526,6 +527,8 @@ export function workerBeat(w: WorkerRow, b: WorkerBeat, now = Date.now()): BeatA
       ...(s.prefix && { prefix: s.prefix }),
     }));
     const fresh = d.prepare("SELECT * FROM relay_workers WHERE id = ?").get(w.id) as WorkerRow;
+    // On at this beat: what the site can make now counts it until CAPACITY_GRACE_MS after its last such beat.
+    if (onNow(fresh, now)) d.prepare("UPDATE relay_workers SET available_at = ? WHERE id = ?").run(now, w.id);
     // Its lanes from another requirements index (the catalog changed since its list came): worked out again now.
     const lanesRefreshed = refreshLanes(fresh);
     // Stop now (the website, or the worker paused itself with --now / a busy GPU): its jobs go back in line at no cost,
@@ -1927,6 +1930,40 @@ function onSoon(w: WorkerRow, now: number): boolean {
     now - w.seen_at <= RELAY_TIMES.poolSilentMs &&
     hoursAt(hoursOf(w), now).inside
   );
+}
+
+/**
+ * Is a worker on now for what the site can make: one of the site's workers, heard from within the silence limit, paused
+ * neither on the website nor on its PC, not draining, new enough and inside its hours.
+ */
+function onNow(w: WorkerRow, now: number): boolean {
+  return w.kind === "pool" && w.pool === "pool" && onSoon(w, now);
+}
+
+/**
+ * Each lane's limits, one per worker counted for what the site can make now (src/lib/capacity.ts): on now, or on at a
+ * beat within CAPACITY_GRACE_MS, so a short drop (a restart, a power cut) changes nothing. A worker counts in the lanes
+ * it is allowed, inside its PC's ceiling. A lane no such worker runs is left out.
+ */
+export function capacityLimits(now = Date.now()): Map<string, LaneLimit[]> {
+  const out = new Map<string, LaneLimit[]>();
+  for (const w of poolWorkers()) {
+    if (w.pool !== "pool" || (w.expires_at && w.expires_at <= now) || (w.protocol ?? 0) < MIN_PROTOCOL) continue;
+    if (!onNow(w, now) && !(w.available_at && now - w.available_at < CAPACITY_GRACE_MS)) continue;
+    const allow = allowOf(w);
+    const ceiling = ceilingOf(w);
+    for (const lane of lanesInside(Object.keys(allow), ceiling)) {
+      const a = allow[lane];
+      const limit: LaneLimit = {
+        ...(a?.maxSeconds && { maxSeconds: a.maxSeconds }),
+        ...(a?.bigFrom && a.bigMaxSeconds && { bigFrom: a.bigFrom, bigMaxSeconds: a.bigMaxSeconds }),
+        ...(ceiling?.maxSeconds && { ceilingSeconds: ceiling.maxSeconds }),
+        ...(ceiling?.maxMegapixels && { ceilingMegapixels: ceiling.maxMegapixels }),
+      };
+      out.set(lane, [...(out.get(lane) ?? []), limit]);
+    }
+  }
+  return out;
 }
 
 /**

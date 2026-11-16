@@ -41,6 +41,8 @@ import {
 import { getModel } from "@/lib/catalog";
 import { PLACE_ASK_HEADER, RUN_PLACE_HEADER, RUN_SHOWN_HEADER } from "@/lib/guest-access";
 import { db } from "./db";
+import { fitRequest } from "./capacity";
+import { POOL_TOO_BIG } from "./providers/comfyui";
 import { AccountRunError, createGenerations, outputKind, plannedSteps, previewChained, previewGeneration, runLoraFiles, stepsOf, type PlannedStep } from "./generations";
 import { loadIndex } from "./gpu/index-file";
 import { attemptLimitMs, MAX_ATTEMPTS, poolLane } from "./computer/pool";
@@ -136,7 +138,7 @@ function refusedForOwnSetup(e: unknown, req: GenerationRequest): OwnSetup | null
  */
 export type PlaceDecision =
   | { kind: "own" }
-  | { kind: "pool"; planned: Planned; policy: Policy; steps: RunFacts["steps"]; req: GenerationRequest; capped: boolean; light: boolean }
+  | { kind: "pool"; planned: Planned; policy: Policy; steps: RunFacts["steps"]; req: GenerationRequest; capped: boolean; stepped?: boolean; light: boolean }
   | { kind: "refuse"; refusal: Refusal };
 
 const OWN = { kind: "own" } as const;
@@ -592,10 +594,26 @@ export async function decidePlace(account: Account, asked: GenerationRequest, wi
   // Closed to this account: its own GPU (or today's "Connect your GPU"); asked for by name, said so.
   if (!p.hosted) return wish === "pool" ? notOffered(hostedWords(placeFor(p)).notHosted) : OWN;
   // Planned, checked and priced for the outputs it would make there (the policy's cap per run).
-  const { req, capped } = poolRequest(asked, p);
+  const outputs = poolRequest(asked, p);
+  let req = outputs.req;
+  const capped = outputs.capped;
   if (capped) {
     try {
       planned = runOnPool(account.id, () => previewGeneration(req));
+    } catch {
+      return OWN;
+    }
+  }
+  // A length or size that no GPU on now makes (src/server/capacity.ts): stepped down to the nearest one made (a shorter
+  // length first, then a smaller size), planned and priced as it is; with none, refused in the words for a size not
+  // offered (or its own GPU, as for any run these GPUs don't take). Only a new run: one already in line is never changed.
+  const fit = fitRequest(req, { endpoint: planned.route.endpoint, op: planned.op }, planned.model);
+  if (fit.kind === "none") return ownFallback ? OWN : { kind: "refuse", refusal: { status: 400, body: { error: POOL_TOO_BIG }, headers: {} } };
+  const stepped = fit.kind === "stepped";
+  if (fit.kind === "stepped") {
+    try {
+      planned = runOnPool(account.id, () => previewGeneration(fit.req));
+      req = fit.req;
     } catch {
       return OWN;
     }
@@ -612,7 +630,7 @@ export async function decidePlace(account: Account, asked: GenerationRequest, wi
   // Its own GPU didn't answer the check: asked, never moved to this install's GPUs (and charged) without a word, unless
   // the account said yes to running there automatically when its GPU can't (site-fallback.ts).
   if (ownOffline && !siteFallbackOn(account.id)) return { kind: "refuse", refusal: askPlace(placeFor(p)) };
-  return { kind: "pool", planned, policy: p, steps: gate.steps ? pricedSteps(gate.steps) : undefined, req, capped, light: lightRun(gate.steps) };
+  return { kind: "pool", planned, policy: p, steps: gate.steps ? pricedSteps(gate.steps) : undefined, req, capped, stepped, light: lightRun(gate.steps) };
 }
 
 /** The input files of a request, for the moderation service: their kind and sha256 (pictures' previews: not sent yet). */

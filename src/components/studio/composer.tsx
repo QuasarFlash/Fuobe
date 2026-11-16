@@ -40,6 +40,8 @@ import { EndFrameNote } from "./end-frame-note";
 import { modelOwnSetup, pickerRules } from "@/lib/pool-rules";
 import { carryParams, closestHere, HERE_SET_UP, hereDefault, hereReason, hereRunLabel, hereSetup, runsHere } from "@/lib/runnable-here";
 import { useHere } from "@/hooks/use-pool-rules";
+import { useCapacity } from "@/hooks/use-capacity";
+import { lengthsUnder, limitAt, resolutionOffered, stepDown, type OfferFacts } from "@/lib/capacity";
 import { controlSetup, keyOnlySetup } from "@/lib/own-setup-controls";
 import { ownSetupDetail, ownSetupLabel, ownSetupShort } from "@/lib/own-setup";
 import { OwnSetupChip, useOwnSetupPress, useOwnSetupViewer } from "@/components/own-setup";
@@ -773,6 +775,8 @@ export function Composer({ docked }: { docked: boolean }) {
   // The price check is asked with the place the run itself names: none while the studio puts its GPUs first and the
   // account's own GPU is online, so it answers for where the server would really send the run.
   const askPool = hostedHere && runOn === "pool";
+  // The lengths and sizes made on this studio's GPUs now (read for any viewer whose runs may go there).
+  const capacity = useCapacity(!!viewerInfo?.hosted);
   const wantPrice = askPool ? quoteBody(signed.request, runPlace) : null;
   const priceBody = useSettled(wantPrice);
   const priceQuery = useHostedQuote(priceBody);
@@ -1320,7 +1324,35 @@ export function Composer({ docked }: { docked: boolean }) {
   };
   // Enhance writes a scene; a tool's optional words (FLUX.3 Upscale's details) stay as typed.
   const baseShape = settingsShape(model, effectiveOp, config.kind, showPrompt && !config.hidePrompt, p, config.ops, studioFormats);
-  const shape = framesCtx ? framesShape(baseShape, framesCtx.chained) : layoutOn ? layoutShape(baseShape) : baseShape;
+  const fullShape = framesCtx ? framesShape(baseShape, framesCtx.chained) : layoutOn ? layoutShape(baseShape) : baseShape;
+  // A run on this studio's GPUs: only the lengths and sizes some GPU there makes now (src/lib/capacity.ts), the choice
+  // stepped down to them. Studios and models stay as they are, and the owner sees every option.
+  const capLengths = framesCtx ? (framesCtx.chained || !model ? null : framesDurations(model)) : fullShape.duration;
+  const capFacts: OfferFacts | null =
+    askPool && model && capacity?.m[model.id]
+      ? {
+          lengths: capLengths,
+          resolutions: fullShape.resolution,
+          still: model.kind !== "video",
+          limit: (res) => limitAt(capacity, model.id, effectiveOp, res ?? model.defaults?.resolution, fullShape.aspect ? (p.aspectRatio ?? model.defaults?.aspectRatio) : undefined),
+        }
+      : null;
+  const capResolution = p.resolution ?? model?.defaults?.resolution;
+  const capDuration = framesCtx?.duration ?? p.duration ?? model?.defaults?.duration;
+  const shape = capFacts
+    ? {
+        ...fullShape,
+        duration: fullShape.duration && lengthsUnder(fullShape.duration, capFacts.limit(capResolution)),
+        resolution: fullShape.resolution && fullShape.resolution.filter((r) => resolutionOffered(capFacts, r, capDuration)),
+      }
+    : fullShape;
+  const framesLengths = !model ? [5] : capFacts && capLengths ? lengthsUnder(capLengths, capFacts.limit(capResolution)) : framesDurations(model);
+  // A choice no longer offered steps down (a shorter length first, then a smaller size), as other settings are clamped.
+  const capStepKey = JSON.stringify(capFacts ? stepDown(capFacts, { duration: capDuration, resolution: capResolution }) : null);
+  useEffect(() => {
+    const patch = JSON.parse(capStepKey) as { duration?: number; resolution?: string } | null;
+    if (patch) setDraft((d) => ({ params: { ...d.params, ...patch } }));
+  }, [capStepKey, setDraft]);
   // An image of a wide scene with a person in it, asked as a small square: one tap makes it 16:9 at a larger size.
   const framing =
     config.kind === "image" && !framingKept && !layoutOn && !framesOn && model
@@ -1824,7 +1856,7 @@ export function Composer({ docked }: { docked: boolean }) {
         <FramesStrip
           frames={draft.frames}
           duration={framesCtx?.duration ?? p.duration ?? 5}
-          durations={model ? framesDurations(model) : [5]}
+          durations={framesLengths}
           onDuration={(duration) => setP({ duration })}
           onMove={(i, seconds) =>
             setDraft((d) => {

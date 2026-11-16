@@ -324,10 +324,8 @@ export async function POST(request: Request) {
         return refuse(over.status, over.error, { code: over.code, ...(over.limit && { limit: over.limit, refreshAt: over.refreshAt }) }, { "Retry-After": String(over.retryAfterS) });
       }
       // The request as it runs there (no more outputs than the policy's cap per run): planned and priced as it is.
-      if (onPool.capped) {
-        req = { ...req, params: onPool.req.params };
-        notes.push(ACCOUNT_MESSAGES.outputsCapped);
-      }
+      if (onPool.capped || onPool.stepped) req = { ...req, params: onPool.req.params };
+      if (onPool.capped) notes.push(ACCOUNT_MESSAGES.outputsCapped);
     }
     // GPU pre-flight: a ComfyUI run that is sure to fail for something missing stops here with the plan that fixes it
     // (src/server/gpu/gate.ts; never when the check is unknown, for graphics memory, or with gpuCheck "skip").

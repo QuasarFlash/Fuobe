@@ -46,7 +46,7 @@ const auth = await import("@/server/auth");
 const generationsRoute = await import("@/app/api/generations/route");
 const { db } = await import("@/server/db");
 const { resetRates } = await import("@/server/rate");
-const { setSetting } = await import("@/server/settings");
+const { getSetting, setSetting } = await import("@/server/settings");
 const { getGeneration, shownError, toGeneration } = await import("@/server/generations");
 const tasks = await import("@/server/computer/tasks");
 const pool = await import("@/server/computer/pool");
@@ -113,6 +113,7 @@ beforeEach(() => {
   setSetting("demoMode", "off");
   // People read the plain sentence only, unless a test says otherwise (Settings → Failed runs).
   setSetting("runFailureDetail", "friendly");
+  setSetting("hostedOnlyWhatCanRun", "on");
   db().prepare("DELETE FROM relay_workers").run();
   db().prepare("UPDATE relay_tasks SET state = 'canceled' WHERE state IN ('waiting','sending','queued','running','collecting')").run();
   db().prepare("UPDATE generations SET status = 'canceled' WHERE status IN ('queued', 'running')").run();
@@ -834,6 +835,7 @@ describe("an account's run that a worker can't finish", () => {
       expect(guest.headers.get("x-middleware-next")).not.toBe("1");
       // Friendly only: the same run reads the plain sentence alone.
       setSetting("runFailureDetail", "friendly");
+  setSetting("hostedOnlyWhatCanRun", "on");
       expect(getGeneration(id)!.errorDetail).toBeUndefined();
       expect(await visitorList()).not.toMatch(/InstantHMR|errorDetail/);
     });
@@ -1077,5 +1079,134 @@ describe("files for runs on the workers", () => {
       delete process.env.FUOBE_BILLING_URL;
       delete process.env.FUOBE_BILLING_TOKEN;
     }
+  });
+});
+
+describe("what the site can make now", () => {
+  const H3 = "oss-minimax-h3";
+  const MINUTE = 60_000;
+  /** Two workers: a large one with no limit of its own, and a small one that makes frames over 0.5 MP up to 5.2 s. */
+  async function twoWorkers() {
+    const big = standInWorker("big");
+    const small = standInWorker("small");
+    const lanes = allLanes(loadIndex(), sha).map((l) => l.lane);
+    db()
+      .prepare("UPDATE relay_workers SET allow_json = ? WHERE id = ?")
+      .run(JSON.stringify(Object.fromEntries(lanes.map((l) => [l, { delayMs: 0, bigFrom: 0.5, bigMaxSeconds: 5.2 }]))), small.id);
+    const capacity = await import("@/server/capacity");
+    const lib = await import("@/lib/capacity");
+    const view = () => {
+      capacity.forgetCapacity();
+      return capacity.capacityView();
+    };
+    const limit = () => lib.limitAt(view(), H3, "t2v", "768p", "16:9");
+    /** The large worker paused on the website, its last beat while on `agoMs` ago (the few seconds kept are skipped). */
+    const bigAway = (agoMs: number) => {
+      db().prepare("UPDATE relay_workers SET paused_server = 1, available_at = ? WHERE id = ?").run(Date.now() - agoMs, big.id);
+      capacity.forgetCapacity();
+    };
+    const bigBack = () => {
+      db().prepare("UPDATE relay_workers SET paused_server = 0, seen_at = ? WHERE id = ?").run(Date.now(), big.id);
+      capacity.forgetCapacity();
+    };
+    return { big, small, view, limit, bigAway, bigBack, capacity };
+  }
+  const h3Run = (duration: number) => run({ feature: "video", modelId: H3, op: "t2v", prompt: "a lighthouse at dusk", params: { duration, resolution: "768p", aspectRatio: "16:9" } });
+  const askedOf = (id: string) => (JSON.parse((db().prepare("SELECT request_json FROM generations WHERE id = ?").get(id) as { request_json: string }).request_json) as { params?: { duration?: number; resolution?: string } }).params;
+
+  it("keeps what a worker makes through a short drop, takes it away after 5 minutes gone, and gives it back as soon as the worker is on", async () => {
+    const { limit, bigAway, bigBack, view } = await twoWorkers();
+    // Both on: the large one makes any length.
+    expect(view().m[H3]).toBeUndefined();
+    expect(limit()).toBeNull();
+    // Gone 2 minutes (a restart, a power cut): nothing changes.
+    bigAway(2 * MINUTE);
+    expect(limit()).toBeNull();
+    // Gone 6 minutes: only what the small one makes.
+    bigAway(6 * MINUTE);
+    expect(limit()).toBe(5.2);
+    expect(view().m[H3]?.t2v).toBeDefined();
+    // Back: at once.
+    bigBack();
+    expect(limit()).toBeNull();
+  });
+
+  it("a beat while on marks the worker; a beat while paused on its PC doesn't", async () => {
+    const { big } = await twoWorkers();
+    const at = () => (db().prepare("SELECT available_at FROM relay_workers WHERE id = ?").get(big.id) as { available_at: number | null }).available_at;
+    const beat = (paused: boolean, now: number) =>
+      pool.workerBeat(
+        db().prepare("SELECT * FROM relay_workers WHERE id = ?").get(big.id) as never,
+        pool.cleanBeat({ device: `wkr-${big.id}`, protocol: 3, version: "1", local: { paused, why: paused ? "here" : null, until: null }, gpu: {}, running: [], stopped: [], catalogVersion: catalogVersion() }),
+        now,
+      );
+    const t0 = Date.now();
+    beat(false, t0);
+    expect(at()).toBe(t0);
+    beat(true, t0 + 5_000);
+    expect(at()).toBe(t0);
+  });
+
+  it("a new run steps down to the nearest length made now (shorter first); one already in line is never changed", async () => {
+    const { bigAway, bigBack } = await twoWorkers();
+    // In line while the large worker is on: 10 s as asked.
+    const before = await h3Run(10);
+    expect(before.status, JSON.stringify(before.body)).toBe(201);
+    const queuedId = before.body.items![0].id;
+    expect(askedOf(queuedId)?.duration).toBe(10);
+    // The large worker gone for 6 minutes: a new 10 s or 15 s run is made at 5 s, a 3 s one as asked.
+    bigAway(6 * MINUTE);
+    for (const [asked, made] of [
+      [10, 5],
+      [15, 5],
+      [3, 3],
+    ] as const) {
+      const r = await h3Run(asked);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      expect(askedOf(r.body.items![0].id)).toMatchObject({ duration: made, resolution: "768p" });
+      // (Stopped once checked: an account has a few runs going at most.)
+      db().prepare("UPDATE generations SET status = 'canceled' WHERE id = ?").run(r.body.items![0].id);
+      db().prepare("UPDATE relay_tasks SET state = 'canceled' WHERE generation_id = ?").run(r.body.items![0].id);
+    }
+    // The run already in line keeps its length and its place.
+    await tick();
+    expect(askedOf(queuedId)?.duration).toBe(10);
+    expect(getGeneration(queuedId)?.status).toBe("queued");
+    expect(taskOf(queuedId)?.state).toBe("waiting");
+    bigBack();
+    const after = await h3Run(10);
+    expect(after.status, JSON.stringify(after.body)).toBe(201);
+    expect(askedOf(after.body.items![0].id)?.duration).toBe(10);
+  });
+
+  it("a size no worker on now makes is refused in the plain words for a size not offered", async () => {
+    const { small, bigAway, view } = await twoWorkers();
+    db().prepare("UPDATE relay_workers SET ceiling_json = ? WHERE id = ?").run(JSON.stringify({ maxMegapixels: 0.3 }), small.id);
+    bigAway(6 * MINUTE);
+    expect(view().m[H3]?.t2v?.["768p"]).toBe(0);
+    const { POOL_TOO_BIG } = await import("@/server/providers/comfyui");
+    const r = await h3Run(5);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe(POOL_TOO_BIG);
+    expect(r.body.error).not.toMatch(/GPU|worker/i);
+  });
+
+  it("Settings → Workers' switch: on, only what is made now; off, every length and size as the models offer them", async () => {
+    const { limit, bigAway, view } = await twoWorkers();
+    const settingsRoute = await import("@/app/api/settings/route");
+    const put = (v: string) => settingsRoute.PUT(new Request(`http://${HOST}/api/settings`, { method: "PUT", body: JSON.stringify({ hostedOnlyWhatCanRun: v }) }));
+    bigAway(6 * MINUTE);
+    expect((await put("off")).status).toBe(200);
+    expect(getSetting("hostedOnlyWhatCanRun")).toBe("off");
+    expect(view()).toEqual({ m: {} });
+    expect(limit()).toBeNull();
+    const off = await h3Run(10);
+    expect(off.status, JSON.stringify(off.body)).toBe(201);
+    expect(askedOf(off.body.items![0].id)?.duration).toBe(10);
+    expect((await put("on")).status).toBe(200);
+    expect(limit()).toBe(5.2);
+    const on = await h3Run(10);
+    expect(askedOf(on.body.items![0].id)?.duration).toBe(5);
+    expect((await put("maybe")).status).toBe(400);
   });
 });

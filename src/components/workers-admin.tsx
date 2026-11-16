@@ -575,6 +575,7 @@ export function WorkersAdmin() {
       </div>
       {/* The name visitors read for these GPUs: asked for only while hosted runs are on. */}
       {q.data?.hosted && <PlaceNameField saved={where.data?.find((s) => s.name === "hostedPlaceName")} />}
+      {q.data?.hosted && <OnlyWhatCanRunField saved={where.data?.find((s) => s.name === "hostedOnlyWhatCanRun")?.value} />}
       {token && <TokenOnce token={token} onDone={() => setToken(null)} />}
       <form
         className="flex flex-wrap items-center gap-2"
@@ -646,6 +647,34 @@ function PlaceNameField({ saved }: { saved?: { value: string; fromEnv: boolean }
         Visitors read it where their runs go, as in &ldquo;Runs on {value.trim() || (saved?.fromEnv ? saved.value : PLACE_NAME_DEFAULT)}&rdquo;. Shown while runs on your GPUs are open to accounts.
       </p>
     </form>
+  );
+}
+
+/**
+ * Whether people's runs on this studio's GPUs are offered only the lengths and sizes a GPU on now makes (on by default):
+ * src/server/capacity.ts. Off, every length and size is offered, as the models do.
+ */
+function OnlyWhatCanRunField({ saved }: { saved?: string }) {
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (on: boolean) => call("PUT", "/api/settings", { hostedOnlyWhatCanRun: on ? "on" : "off" }),
+    onSuccess: () => {
+      toast.success("Saved");
+      void qc.invalidateQueries({ queryKey: ["settings"] });
+      void qc.invalidateQueries({ queryKey: ["capacity"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return (
+    <div className="max-w-2xl space-y-1.5">
+      <label className="flex items-center gap-2 text-[14px]">
+        <input type="checkbox" checked={saved !== "off"} disabled={save.isPending || saved === undefined} onChange={(e) => save.mutate(e.target.checked)} />
+        Offer only the lengths and sizes the site&apos;s GPUs can make now
+      </label>
+      <p className="text-[13px] text-muted-foreground">
+        People pick from what a GPU that is on can make, and a choice that isn&apos;t made now steps down to the nearest one. Off, every length and size is offered.
+      </p>
+    </div>
   );
 }
 

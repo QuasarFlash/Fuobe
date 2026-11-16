@@ -1158,6 +1158,8 @@ const RELAY_COLUMNS: [string, string, string][] = [
   // streaming from RAM (its RAM guard: pool.ts streamTakers).
   ["relay_workers", "ram_guard", "INTEGER NOT NULL DEFAULT 0"],
   ["relay_workers", "asked_no_stream", "INTEGER NOT NULL DEFAULT 0"],
+  // The last beat at which a worker was on (pool.ts capacityLimits).
+  ["relay_workers", "available_at", "INTEGER"],
 ];
 
 declare global {

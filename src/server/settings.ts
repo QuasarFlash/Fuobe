@@ -89,6 +89,11 @@ export const SETTINGS = {
    */
   hostedPlaceName: { key: "hosted.placeName", env: "FUOBE_PLACE_NAME" },
   /**
+   * Settings → Workers: "on" offers people's runs on this install's GPUs only the lengths and sizes a GPU on now makes,
+   * and steps a new run down to them (src/server/capacity.ts); "off" offers every one, as the models do.
+   */
+  hostedOnlyWhatCanRun: { key: "hosted.onlyWhatCanRun", default: "on", options: ["on", "off"] },
+  /**
    * ComfyUI's models/loras folder, when it's on this machine: trained LoRAs are copied there, and a recipe's
    * LoRAs (looks, motions) are downloaded there before a run needs them (src/server/loras.ts).
    */
