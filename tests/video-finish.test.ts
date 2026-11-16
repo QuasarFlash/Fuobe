@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -18,6 +17,7 @@ import { editOnlyFormat, outputActions } from "@/lib/output-actions";
 import { slimModel } from "@/lib/studio-catalog";
 import { FPS_BOOST_STUDIO, SDR_TO_HDR_STUDIO, UPSCALE_STUDIO, VIDEO_EXPORT_STUDIO, VIDEO_UPSCALE_STUDIO } from "@/lib/studios";
 import { tempDir } from "./helpers/temp-dir";
+import { readZip } from "./helpers/zip-read";
 
 // The Upscale hub's video tools (r4/video-finish): FPS Boost and slow motion, SDR to HDR, pro export formats,
 // the upscalers' options, and chunked open upscaling.
@@ -563,8 +563,8 @@ describe("files", () => {
     }
     const size = await zipToFile(frames(), dest);
     expect(fs.statSync(dest).size).toBe(size);
-    const out = execFileSync("python3", ["-I", "-c", "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(z.testzip(), '|'.join(f'{i.filename}:{i.file_size}' for i in z.infolist()))", dest]).toString().trim();
-    expect(out).toBe("None frame_00001.exr:1000|frame_00002.exr:2000|frame_00003.exr:3000");
+    const out = readZip(fs.readFileSync(dest)).infolist().map((i) => `${i.filename}:${i.file_size}`).join("|");
+    expect(out).toBe("frame_00001.exr:1000|frame_00002.exr:2000|frame_00003.exr:3000");
   });
 
   it("keeps a provider's big EXR zip (streamed to disk, past the 200 MB in-memory cap), or its link when it can't be fetched", async () => {

@@ -198,7 +198,7 @@ describe("fuobe CLI against a Fuobe server", () => {
     const r = await run(["generate", "a red fox", "--image", "me.png", "--aspect", "1:1", "--out", "renders", "--interval", "0.2"]);
     expect(r.stderr).toContain("Using Nano Banana Pro (nano-banana-pro)");
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/^Saved renders\/gen1\.png \(1 KB\)$/m);
+    expect(r.stdout).toMatch(/^Saved renders[\\/]gen1\.png \(1 KB\)$/m);
     expect(fs.readFileSync(path.join(tmp, "renders/gen1.png")).equals(PNG)).toBe(true);
     // Every request carried the token.
     expect(seen.every((s) => s.auth === `Bearer ${TOKEN}`)).toBe(true);
@@ -361,12 +361,13 @@ describe("fuobe CLI against a Fuobe server", () => {
   it("saves a download inside --out whatever id the server sends", async () => {
     const r = await run(["download", "evil", "--out", "safe"]);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/^Saved safe\/___escaped\.png \(1 KB\)$/m);
+    expect(r.stdout).toMatch(/^Saved safe[\\/]___escaped\.png \(1 KB\)$/m);
     expect(fs.existsSync(path.join(tmp, "escaped.png"))).toBe(false);
     expect(fs.readdirSync(path.join(tmp, "safe"))).toEqual(["___escaped.png"]);
   });
 
-  it("stops waiting at once on Ctrl+C, not after the next --interval", async () => {
+  // Windows has no SIGINT to send to another process: kill() ends it at once, with no exit code.
+  it.skipIf(process.platform === "win32")("stops waiting at once on Ctrl+C, not after the next --interval", async () => {
     const t0 = Date.now();
     let child: ReturnType<typeof spawn> | undefined;
     const done = run(["wait", "slow", "--interval", "30"], {}, (c) => (child = c));
@@ -458,7 +459,7 @@ describe("fuobe skills: a skill that runs by itself", () => {
     const r = await run(["skills", "run", "weekly-promo", "-p", "product=lamp.png", "-p", "name=Lumen", "--yes", "--out", "promo", "--interval", "0.2"]);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain("Pricing /weekly-promo on the cloud first (free: nothing runs)…");
-    expect(r.stdout).toMatch(/^Saved promo\/gen1\.png \(1 KB\)$/m);
+    expect(r.stdout).toMatch(/^Saved promo[\\/]gen1\.png \(1 KB\)$/m);
     // Priced with a stand-in, checked, then the file went up once and the run used its URL.
     expect(seen.filter((s) => s.method === "POST").map((s) => s.path)).toEqual([
       "/api/assist/skills/weekly-promo/estimate",

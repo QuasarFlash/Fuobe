@@ -1,10 +1,10 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LORA_LIBRARY, LORA_LIBRARY_AS_OF, MOTION_EFFECT_LORAS } from "@/lib/catalog/lora-library.generated";
 import { civitaiVersion, libraryEntry, licenceLine, loraByFile, loraEntry, loraRef, needsToken } from "@/lib/catalog/loras";
 import { tempDir } from "./helpers/temp-dir";
+import { python, runPython } from "./helpers/python";
 
 const ROOT = path.resolve(__dirname, "..");
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,17 +124,17 @@ describe("LoRA library (lora-library.generated.ts)", () => {
     expect(loraRef(loraEntry("awportrait")!).strength).toBe(0.6);
   });
 
-  it("is what the generator writes (no hand edits); the generator refuses broken pins and only notes licences", () => {
+  it.skipIf(!python)("is what the generator writes (no hand edits); the generator refuses broken pins and only notes licences", () => {
     const tmp = tempDir("fuobe-lora-gen-");
     const research = () => JSON.parse(fs.readFileSync(path.join(ROOT, "docs/research/fuobe-originals-recipes-5.json"), "utf8"));
     const refuses = (data: unknown, why: RegExp) => {
       fs.writeFileSync(path.join(tmp, "docs/research/fuobe-originals-recipes-5.json"), JSON.stringify(data));
-      expect(() => execFileSync("python3", [path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" })).toThrow(why);
+      expect(() => runPython([path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" })).toThrow(why);
     };
     // Licences are information (Settings → Models & licences): the generator writes the library and prints a note.
     const notes = (data: unknown, what: RegExp) => {
       fs.writeFileSync(path.join(tmp, "docs/research/fuobe-originals-recipes-5.json"), JSON.stringify(data));
-      expect(execFileSync("python3", [path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" }).toString()).toMatch(what);
+      expect(runPython([path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" }).toString()).toMatch(what);
     };
     try {
       // A copy of the repo layout the script reads, with one civitai URL unpinned.
@@ -143,7 +143,7 @@ describe("LoRA library (lora-library.generated.ts)", () => {
       fs.mkdirSync(path.join(tmp, "src/lib/catalog"), { recursive: true });
       fs.copyFileSync(path.join(ROOT, "scripts/gen-lora-library.py"), path.join(tmp, "scripts/gen-lora-library.py"));
       fs.copyFileSync(path.join(ROOT, "docs/research/fuobe-originals-recipes-5.json"), path.join(tmp, "docs/research/fuobe-originals-recipes-5.json"));
-      execFileSync("python3", [path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" });
+      runPython([path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" });
       expect(fs.readFileSync(path.join(tmp, "src/lib/catalog/lora-library.generated.ts"), "utf8")).toBe(fs.readFileSync(path.join(ROOT, "src/lib/catalog/lora-library.generated.ts"), "utf8"));
       type Raw = { key?: string; presets?: string[]; status?: string; loras?: Raw[]; url?: string; sha256?: string; revision?: string };
       // A civitai entry without a pinned version.

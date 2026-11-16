@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +5,7 @@ import { onEngine } from "@/lib/catalog/engines";
 import { getModel } from "@/lib/catalog";
 import { identityFor, identityKey, SOUL_ID_COPY } from "@/lib/catalog/training";
 import { tempDir } from "./helpers/temp-dir";
+import { readZip } from "./helpers/zip-read";
 
 // fal's storage upload goes through its client: the dataset zip and a LoRA sent to fal land here instead.
 const uploads = vi.hoisted(() => [] as { data: Buffer; type: string; name?: string }[]);
@@ -117,7 +117,7 @@ describe("starting a Soul ID training", () => {
     // The dataset: one caption per photo, named as fal's trainers read them.
     const zipFile = path.join(dir, "dataset.zip");
     fs.writeFileSync(zipFile, uploads[0].data);
-    const names = execFileSync("python3", ["-I", "-c", "import sys,zipfile;print(' '.join(sorted(zipfile.ZipFile(sys.argv[1]).namelist())))", zipFile]).toString().trim().split(" ");
+    const names = readZip(fs.readFileSync(zipFile)).namelist().sort();
     expect(names).toEqual(["001.png", "001.txt", "002.png", "002.txt", "003.png", "003.txt", "004.png", "004.txt", "005.png", "005.txt", "006.png", "006.txt"]);
     expect(listTrainings(el.id)[0]).toMatchObject({ status: "running", costUsd: 1.7, family: "z-image-turbo", photos: 6 });
     db().prepare("UPDATE trainings SET status = 'failed' WHERE id = ?").run(t.id);
@@ -345,7 +345,7 @@ describe("training anywhere", () => {
     const kit = await trainingKit(el.id);
     const file = path.join(dir, kit.name);
     fs.writeFileSync(file, kit.data);
-    const names = execFileSync("python3", ["-I", "-c", "import sys,zipfile;print(' '.join(sorted(zipfile.ZipFile(sys.argv[1]).namelist())))", file]).toString().trim().split(" ");
+    const names = readZip(fs.readFileSync(file)).namelist().sort();
     expect(names).toContain("dataset/001.png");
     expect(names).toContain("dataset/005.txt");
     expect(names).toContain("README.md");
@@ -354,7 +354,8 @@ describe("training anywhere", () => {
     expect(flux.name).toMatch(/-flux1-dev-training-kit\.zip$/);
     const fluxFile = path.join(dir, flux.name);
     fs.writeFileSync(fluxFile, flux.data);
-    const read = (name: string) => execFileSync("python3", ["-I", "-c", "import sys,zipfile;print(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())", fluxFile, name]).toString();
+    const fluxZip = readZip(fs.readFileSync(fluxFile));
+    const read = (name: string) => fluxZip.read(name).toString();
     const yaml = names.find((n) => n.endsWith(".yaml"))!;
     expect(JSON.parse(read(yaml)).config.process[0].model).toMatchObject({ arch: "flux", name_or_path: "black-forest-labs/FLUX.1-dev" });
     expect(read("README.md")).toMatch(/FLUX\.1 \[dev\] Non-Commercial License · non-commercial weights/);

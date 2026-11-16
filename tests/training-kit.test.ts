@@ -28,6 +28,8 @@ import {
   type MotionClip,
   type TrainingSpec,
 } from "@/lib/training-kit";
+import { readZip } from "./helpers/zip-read";
+import { python, runPython } from "./helpers/python";
 
 const ROOT = path.resolve(__dirname, "..");
 /** The parts of an AI-Toolkit process the tests read. */
@@ -230,7 +232,7 @@ describe("training kit: the LoRA library's planned entries", () => {
     expect(getPreset("motion-eyes-in")?.open?.loras).toBeUndefined();
   });
 
-  it("is refused by the generator when a preset uses a planned LoRA or an entry has no licence snapshot; a trained block publishes it", () => {
+  it.skipIf(!python)("is refused by the generator when a preset uses a planned LoRA or an entry has no licence snapshot; a trained block publishes it", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fuobe-kit-gen-"));
     fs.mkdirSync(path.join(tmp, "scripts"));
     fs.mkdirSync(path.join(tmp, "docs/research"), { recursive: true });
@@ -238,7 +240,7 @@ describe("training kit: the LoRA library's planned entries", () => {
     fs.copyFileSync(path.join(ROOT, "scripts/gen-lora-library.py"), path.join(tmp, "scripts/gen-lora-library.py"));
     const run = (data: unknown) => {
       fs.writeFileSync(path.join(tmp, "docs/research/fuobe-originals-recipes-5.json"), JSON.stringify(data));
-      return execFileSync("python3", [path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" }).toString();
+      return runPython([path.join(tmp, "scripts/gen-lora-library.py")], { stdio: "pipe" }).toString();
     };
     try {
       let data = research();
@@ -376,8 +378,7 @@ describe("training kit: the command line", () => {
       expect(JSON.parse(fs.readFileSync(path.join(out, "fuobe-cctv.aitk.json"), "utf8")).config.process[0].datasets[0].folder_path).toBe(data);
       expect(fs.existsSync(path.join(out, "fuobe-cctv.fal.json"))).toBe(false);
       const zip = fs.readFileSync(path.join(out, "fuobe-cctv.dataset.zip"));
-      const listing = execFileSync("python3", ["-I", "-m", "zipfile", "-l", path.join(out, "fuobe-cctv.dataset.zip")]).toString();
-      expect(listing.match(/\d{3}\.(jpg|txt)/g)).toHaveLength(80);
+      expect(readZip(zip).namelist().filter((n) => /\d{3}\.(jpg|txt)$/.test(n))).toHaveLength(80);
       // A URL that serves something else is refused; the zip the kit built is taken.
       served = Buffer.from("another dataset");
       expect(await runAsync(["job", "fuobe-cctv", "--dataset", data, "--zip-url", zipUrl, "--out", out])).toEqual({ refused: 1, out: expect.stringMatching(/is not fuobe-cctv\.dataset\.zip/) });

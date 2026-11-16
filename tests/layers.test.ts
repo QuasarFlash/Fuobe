@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +6,7 @@ import { imageLimit } from "@/lib/catalog/plan";
 import type { Operation } from "@/lib/catalog/types";
 import { layersHref } from "@/lib/output-actions";
 import { tempDir } from "./helpers/temp-dir";
+import { readZip } from "./helpers/zip-read";
 import {
   addNodes,
   addRevision,
@@ -129,9 +129,9 @@ describe("zip naming", () => {
     try {
       const file = path.join(dir, "cropped-layers.zip");
       fs.writeFileSync(file, zip);
-      const out = execFileSync("python3", ["-c", "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print('|'.join(i.filename+':'+str(i.file_size) for i in z.infolist()));print(z.read('layer-z0-background.png').decode())", file]).toString().trim().split("\n");
-      expect(out[0]).toBe("composite.png:7|layer-z0-background.png:12");
-      expect(out[1]).toBe("hello layers");
+      const z = readZip(fs.readFileSync(file));
+      expect(z.infolist().map((i) => `${i.filename}:${i.file_size}`).join("|")).toBe("composite.png:7|layer-z0-background.png:12");
+      expect(z.read("layer-z0-background.png").toString()).toBe("hello layers");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

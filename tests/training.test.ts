@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -37,6 +36,8 @@ import { buildPayload } from "@/lib/catalog/payload";
 import { OWN_LOOK, soulPostSteps, soulRecipe } from "@/lib/catalog/soul";
 import { zip } from "@/server/zip";
 import { tempDir } from "./helpers/temp-dir";
+import { readZip } from "./helpers/zip-read";
+import { python, runPython } from "./helpers/python";
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -239,16 +240,17 @@ describe("Fuobe Soul ID targets (build plan O3)", () => {
     const dir = tempDir("fuobe-zip-");
     const file = path.join(dir, "kit.zip");
     fs.writeFileSync(file, zip([{ name: "dataset/001.txt", data: Buffer.from("photo of nvrysfz") }, { name: "a.yaml", data: Buffer.from("{}") }]));
-    const out = execFileSync("python3", ["-I", "-c", "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(z.testzip(), z.read('dataset/001.txt').decode())", file]).toString();
-    expect(out.trim()).toBe("None photo of nvrysfz");
+    const z = readZip(fs.readFileSync(file));
+    expect(z.namelist()).toEqual(["dataset/001.txt", "a.yaml"]);
+    expect(z.read("dataset/001.txt").toString()).toBe("photo of nvrysfz");
   });
 });
 
-describe("gen-trainers.py", () => {
+describe.skipIf(!python)("gen-trainers.py", () => {
   it("writes what is committed (the trainers match the research)", () => {
     const file = path.join(ROOT, "src/lib/catalog/trainers.generated.ts");
     const before = fs.readFileSync(file, "utf8");
-    execFileSync("python3", ["scripts/gen-trainers.py"], { cwd: ROOT });
+    runPython(["scripts/gen-trainers.py"], { cwd: ROOT });
     expect(fs.readFileSync(file, "utf8")).toBe(before);
   });
   it("records every fal trainer with its licence as data (non-commercial ones too) and where its LoRA comes back", () => {

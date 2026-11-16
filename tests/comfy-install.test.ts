@@ -72,7 +72,7 @@ describe("Workflows → Copy install commands", () => {
   it("the commands run, and run again, as install-comfyui.sh does: a pinned clone moves to its pin, a copied pack isn't copied twice", () => {
     const tmp = tempDir("fuobe-comfy-install-");
     const git = (cwd: string, ...args: string[]) =>
-      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, encoding: "utf8" }).trim();
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", "-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" }).trim();
     /** A stand-in remote with two commits; the first is the pin. */
     const remote = (name: string, file: string) => {
       const d = path.join(tmp, "remotes", name);
@@ -84,7 +84,8 @@ describe("Workflows → Copy install commands", () => {
       const pin = git(d, "rev-parse", "HEAD");
       fs.writeFileSync(path.join(d, file), "newer\n");
       git(d, "commit", "-q", "-am", "newer");
-      return { dir: d, pin, head: git(d, "rev-parse", "HEAD") };
+      // The commands name it unquoted, as they name a URL: forward slashes, which bash and git read on Windows too.
+      return { dir: d.split(path.sep).join("/"), pin, head: git(d, "rev-parse", "HEAD") };
     };
     try {
       const relay = remote("relay", "__init__.py");
@@ -98,7 +99,10 @@ describe("Workflows → Copy install commands", () => {
           tool.dir,
         ),
       ].join("\n");
-      const run = () => execFileSync("bash", ["-c", commands], { env: { ...process.env, COMFYUI: comfy }, stdio: "pipe" });
+      // Git for Windows' bash would rewrite the sparse-checkout pattern (/worker_nodes/…) into a Windows path, and a
+      // global core.autocrlf would change the files checked out; neither is so on Linux, where these commands run.
+      const env = { ...process.env, COMFYUI: comfy, MSYS2_ARG_CONV_EXCL: "/worker_nodes/", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.autocrlf", GIT_CONFIG_VALUE_0: "false" };
+      const run = () => execFileSync("bash", ["-c", commands], { env, stdio: "pipe" });
       const pack = path.join(comfy, "custom_nodes", "h3_character_swap");
       const clone = path.join(comfy, "custom_nodes", "h3-relay");
       run();

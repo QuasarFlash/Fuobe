@@ -15,6 +15,17 @@ from fuobe_metrics import media
 needs_ffmpeg = pytest.mark.skipif(not media.have_ffmpeg(), reason="ffmpeg isn't installed")
 
 
+def _svg_decoder() -> bool:
+    if not media.have_ffmpeg():
+        return False
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-decoders"], capture_output=True, text=True).stdout
+    return " librsvg " in out
+
+
+# Some ffmpeg builds (the common Windows ones) have no SVG decoder.
+needs_svg = pytest.mark.skipif(not _svg_decoder(), reason="this ffmpeg has no SVG decoder (librsvg)")
+
+
 def _clip(tmp_path, name="clip.mp4", seconds=2, size="160x96", audio=True):
     out = tmp_path / name
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size={size}:rate=12:duration={seconds}"]
@@ -38,7 +49,7 @@ def test_load_image_png():
     assert img.mode == "RGB" and img.size == (500, 100)
 
 
-@needs_ffmpeg
+@needs_svg
 def test_load_image_rasterises_svg(tmp_path):
     svg = tmp_path / "demo.svg"
     svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><rect width="64" height="32" fill="#ff0000"/></svg>')

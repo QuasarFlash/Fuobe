@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -18,6 +17,7 @@ import { SOUL_CINEMA, SOUL_CORE_LORAS, SOUL_ORIGINALS, SOUL_SAMPLER, SOUL_SIZES,
 import { applyPreset, FRAGMENT, isNeutral, NEUTRAL, PRESETS, uniforms } from "@/lib/grade";
 import { finishSteps, outputsToFinish, overlayLayout } from "@/lib/soul-post";
 import { lookCard, lookSet, SOUL_LOOK_CARDS } from "@/lib/catalog/soul-cards";
+import { python, runPython } from "./helpers/python";
 
 const ROOT = path.resolve(__dirname, "..");
 const research = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/research/fuobe-originals-recipes-5.json"), "utf8"));
@@ -194,11 +194,11 @@ describe("Soul recipe (soul.ts)", () => {
   });
 });
 
-describe("gen-soul-originals.py", () => {
+describe.skipIf(!python)("gen-soul-originals.py", () => {
   it("writes what is committed (the generated files match the research)", () => {
     const files = ["src/lib/catalog/soul-originals.generated.ts", "src/lib/catalog/soul-looks.generated.ts"].map((f) => path.join(ROOT, f));
     const before = files.map((f) => fs.readFileSync(f, "utf8"));
-    execFileSync("python3", ["scripts/gen-soul-originals.py"], { cwd: ROOT });
+    runPython(["scripts/gen-soul-originals.py"], { cwd: ROOT });
     expect(files.map((f) => fs.readFileSync(f, "utf8"))).toEqual(before);
   });
 });

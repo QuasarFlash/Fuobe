@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { tempDir } from "./helpers/temp-dir";
+import { readZip } from "./helpers/zip-read";
 
 // Route handlers call connection() (no request scope in a test).
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), connection: async () => {} }));
@@ -401,8 +401,9 @@ describe("zip download", () => {
     expect(buf.length).toBe(zipSize(entries));
     const file = path.join(dir, "out.zip");
     fs.writeFileSync(file, buf);
-    const out = execFileSync("python3", ["-I", "-c", "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(z.testzip(), len(z.namelist()), z.read(z.namelist()[0])[-6:].decode())", file]).toString();
-    expect(out.trim()).toBe("None 2 zip me");
+    const z = readZip(fs.readFileSync(file));
+    expect(z.namelist()).toHaveLength(2);
+    expect(z.read(z.namelist()[0]).subarray(-6).toString()).toBe("zip me");
   });
 });
 
@@ -564,15 +565,15 @@ describe("nested folders", () => {
     expect(zip.name).toBe("Zip/top");
     expect(zip.entries.map((e) => e.name.replace(/-[\w-]{6}\.png$/, "")).sort()).toEqual(["Close ups/Hands/zip-deep", "Close ups/zip-sub", "zip-top"]);
     expect(lib.folderZipEntries("missing")).toBeNull();
-    // The route: ?check=1 answers the count, then the zip itself reads back in Python.
+    // The route: ?check=1 answers the count, then the zip itself reads back.
     const check = await folderZipRoute.GET(new Request("http://x/zip?check=1"), ctxOf(top.id));
     expect(await check.json()).toMatchObject({ files: 3 });
     const res = await folderZipRoute.GET(new Request("http://x/zip"), ctxOf(top.id));
     expect(res.headers.get("Content-Disposition")).toMatch(/filename="Zip-top-\d{4}-\d{2}-\d{2}\.zip"/);
     const file = path.join(dir, "folder.zip");
     fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-    const names = execFileSync("python3", ["-I", "-c", "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print('|'.join(sorted(z.namelist())))", file]).toString().trim();
-    expect(names.split("|").map((n) => n.replace(/-[\w-]{6}\.png$/, ""))).toEqual(["Close ups/Hands/zip-deep", "Close ups/zip-sub", "zip-top"]);
+    const names = readZip(fs.readFileSync(file)).namelist().sort();
+    expect(names.map((n) => n.replace(/-[\w-]{6}\.png$/, ""))).toEqual(["Close ups/Hands/zip-deep", "Close ups/zip-sub", "zip-top"]);
     expect((await folderZipRoute.GET(new Request("http://x/zip"), ctxOf(empty.id))).status).toBe(404);
     expect((await folderZipRoute.GET(new Request("http://x/zip"), ctxOf("missing"))).status).toBe(404);
     for (const f of [deeper, sub, top, empty]) lib.deleteFolder(f.id);

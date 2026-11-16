@@ -253,8 +253,8 @@ describe("output", () => {
 
 describe("config and the server address", () => {
   it("finds the config file", () => {
-    expect(configPath({}, "/home/me")).toBe("/home/me/.config/fuobe/config.json");
-    expect(configPath({ XDG_CONFIG_HOME: "/cfg" }, "/home/me")).toBe("/cfg/fuobe/config.json");
+    expect(configPath({}, "/home/me")).toBe(path.join("/home/me", ".config/fuobe/config.json"));
+    expect(configPath({ XDG_CONFIG_HOME: "/cfg" }, "/home/me")).toBe(path.join("/cfg", "fuobe/config.json"));
     expect(configPath({ FUOBE_CONFIG: "/x.json" }, "/home/me")).toBe("/x.json");
   });
 
@@ -395,7 +395,7 @@ describe("skills add", () => {
     write("repo/top/SKILL.md", skill("top"));
     write("repo/node_modules/x/SKILL.md", skill("x"));
     write("repo/docs/deep/er/SKILL.md", skill("deep"));
-    const names = findSkillDirs(repo).map((d) => path.relative(repo, d));
+    const names = findSkillDirs(repo).map((d) => path.relative(repo, d).split(path.sep).join("/"));
     expect(names).toEqual([".agents/skills/c", "skills/a", "skills/marketing/b", "top"]);
     // A folder that is a skill is just that skill.
     expect(findSkillDirs(path.join(repo, "skills/a"))).toEqual([path.join(repo, "skills/a")]);
