@@ -3,6 +3,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { cleanCopy, type ServiceCopy } from "@/lib/service-copy";
 import { cleanMarks, type ModelMarks } from "@/lib/model-marks";
+import { cleanNavLink, type NavLink } from "@/lib/nav-link";
 import { isCloudProvider, type CloudProvider } from "@/lib/your-keys";
 import { accountEngineMode, accountKeyInfo, accountProviders, paidAllowed, usableProviders } from "./account-keys";
 import { accountGpu, type Account, type AccountGpu } from "./auth";
@@ -378,6 +379,8 @@ export interface VisitorView {
    * Only while the viewer's runs go to this install's GPUs.
    */
   marks?: ModelMarks;
+  /** The billing service's link for the top bar (src/lib/nav-link.ts): its words and a same-site address. */
+  navLink?: NavLink;
   /**
    * What this install's GPUs keep off (the policy's model and app lists, and its kinds), for a visitor with no GPU of its
    * own: its pickers leave those out instead of failing at Run. Absent: nothing is kept off, or it has a GPU of its own.
@@ -441,9 +444,10 @@ export type VisitorTrouble = Pick<Diagnosis, "cause" | "words" | "actions" | "re
  * GET /api/status for a guest or an account: ComfyUI is its own GPU (taken as there until it has one,
  * so the studios offer Generate and the run asks it to connect one), fal.ai and Replicate are its own
  * keys, the engine mode they allow (account-keys.ts), no Demo mode, and nothing of the install's own
- * servers, keys or addresses.
+ * servers, keys or addresses. `zone`: the browser's own time zone (the fuobe_tz cookie, src/lib/nav-link.ts), passed
+ * on to the billing service with the balance.
  */
-export async function visitorStatus(account: Account | null) {
+export async function visitorStatus(account: Account | null, zone?: string | null) {
   const gpu = account ? accountGpu(account.id) : null;
   const live = account && gpu ? await gpuState(account.id, gpu) : null;
   const keys = account ? accountProviders(account.id) : [];
@@ -501,10 +505,13 @@ export async function visitorStatus(account: Account | null) {
     const toSite = !gpu || viewer.runOn === "site" || (!viewer.runOn && p?.prefer === "pool");
     const marks = p?.hosted && toSite ? cleanMarks(p.marks) : null;
     if (marks) viewer.marks = marks;
+    // The service's link for the top bar, for guests and accounts alike.
+    const navLink = p?.hosted ? cleanNavLink(p.navLink) : null;
+    if (navLink) viewer.navLink = navLink;
     // The service's display copy (wait and limit lines), for guests and accounts alike.
     const copy = p?.hosted ? cleanCopy(p.copy) : null;
     if (copy) viewer.copy = copy;
-    const b = account ? await billingBalance(account.id) : null;
+    const b = account ? await billingBalance(account.id, zone) : null;
     if (b) viewer.balance = b;
   }
   const configured = (id: string) => (id === "comfyui" ? (gpu ? !!live?.online : true) : isCloudProvider(id) && keys.includes(id));

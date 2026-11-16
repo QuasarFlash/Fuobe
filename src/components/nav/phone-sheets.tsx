@@ -9,7 +9,7 @@ import { AccountSections } from "@/components/nav/account-menu";
 import { CreateList } from "@/components/nav/create-menu";
 import { PHONE_QUERY, useNavUi, type NavSheet } from "@/components/nav/nav-ui";
 import { useSearchPalette } from "@/components/nav/search-context";
-import { ComputerNoteBlock } from "@/components/nav/status-chips";
+import { ComputerNoteBlock, NavLinkBlock } from "@/components/nav/status-chips";
 import { FamilySwitch, StudiosSheet } from "@/components/nav/studios-sheet";
 import { MEGA_AREAS, type MegaId } from "@/lib/mega-menus";
 import { warmNav } from "@/components/nav/nav-prefetch";
@@ -63,6 +63,7 @@ export function sheetReturnTarget(opener: HTMLElement | null, shown: NavSheet, t
 function YouSheet() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 pb-1 [--nav-icon:18px]">
+      <NavLinkBlock />
       <ComputerNoteBlock />
       <AccountSections variant="sheet" />
     </div>

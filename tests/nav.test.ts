@@ -114,7 +114,7 @@ describe("the app frame's state before the first paint", () => {
     expect(attrs.get("data-had-balance")).toBe("1");
     expect(attrs.has("data-had-computer")).toBe(false);
     expect(attrs.has("data-had-placeholders")).toBe(false);
-    expect([...CHROME_HAD_PILLS]).toEqual(["balance", "computer", "placeholders"]);
+    expect([...CHROME_HAD_PILLS]).toEqual(["balance", "computer", "placeholders", "navlink"]);
     // Anything but a known kind is ignored.
     expect(run("/", { "fuobe:viewer": "admin" }).has("data-viewer")).toBe(false);
   });
@@ -124,5 +124,22 @@ describe("the app frame's state before the first paint", () => {
     const attrs = run("/assist", {}, "throws");
     expect(attrs.has("data-fullscreen-studio")).toBe(true);
     expect(attrs.has("data-viewer")).toBe(false);
+  });
+
+  /** The script with a cookie jar, a time zone and a protocol: what it leaves in document.cookie. */
+  function cookieRun(zone: string | undefined, cookie = "", protocol = "https:") {
+    const doc = { documentElement: { setAttribute: () => {} }, cookie };
+    const Intl = { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: zone }) }) };
+    new Function("document", "localStorage", "location", "Intl", CHROME_STATE_SCRIPT)(doc, { getItem: () => null }, { pathname: "/", protocol }, Intl);
+    return doc.cookie;
+  }
+
+  it("keeps the browser's time zone in a cookie, only when it changed", () => {
+    expect(cookieRun("Asia/Kolkata")).toBe("fuobe_tz=Asia%2FKolkata;path=/;max-age=31536000;samesite=lax;secure");
+    expect(cookieRun("Asia/Kolkata", "", "http:")).toBe("fuobe_tz=Asia%2FKolkata;path=/;max-age=31536000;samesite=lax");
+    // Already there: the jar is left alone (a real jar would only hold name=value).
+    expect(cookieRun("Asia/Kolkata", "a=1; fuobe_tz=Asia%2FKolkata")).toBe("a=1; fuobe_tz=Asia%2FKolkata");
+    expect(cookieRun("Europe/London", "fuobe_tz=Asia%2FKolkata")).toContain("fuobe_tz=Europe%2FLondon;");
+    expect(cookieRun(undefined, "")).toBe("");
   });
 });

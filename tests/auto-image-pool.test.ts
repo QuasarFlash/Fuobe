@@ -345,4 +345,16 @@ describe("an account's own Auto order and menu words from the billing service", 
     billing.resetBillingCache();
     expect((await visitorStatus(acct)).viewer?.marks).toBeUndefined();
   });
+
+  it("the bar's link reaches guests and accounts cleaned, and the balance carries the browser's time zone", async () => {
+    fake.policy = { ...FAKE_POLICY, navLink: { label: "Go Unlimited", url: "/pricing?from=nav" } } as typeof FAKE_POLICY;
+    const acct = auth.createAccount(`navlink-${++n}@example.com`, "long enough");
+    const { visitorStatus } = await import("@/server/account-gpu");
+    expect((await visitorStatus(acct, "Asia/Kolkata")).viewer?.navLink).toEqual({ label: "Go Unlimited", url: "/pricing?from=nav" });
+    expect((await visitorStatus(null)).viewer?.navLink).toEqual({ label: "Go Unlimited", url: "/pricing?from=nav" });
+    expect(fake.calls_of("/v1/balance").at(-1)?.path).toBe(`/v1/balance?account=${encodeURIComponent(acct.id)}&tz=Asia%2FKolkata`);
+    fake.policy = { ...FAKE_POLICY, navLink: { label: "Go", url: "https://example.com" } } as typeof FAKE_POLICY;
+    billing.resetBillingCache();
+    expect((await visitorStatus(acct)).viewer?.navLink).toBeUndefined();
+  });
 });

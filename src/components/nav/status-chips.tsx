@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement } from "react";
-import { ChevronDown, Cpu, KeyRound, Server } from "lucide-react";
+import { ChevronDown, Cpu, KeyRound, Server, Sparkles } from "lucide-react";
 import { PlaceholdersOnChip } from "@/components/demo-mode";
 import { IntentLink } from "@/components/intent-link";
 import { awayFix, openConnect, useComputerSupport } from "@/components/gpu/open-connect";
@@ -17,6 +17,7 @@ import { placeholdersOn } from "@/lib/demo-mode";
 import { deviceLabel } from "@/lib/gpu/readiness";
 import { shortState } from "@/lib/diagnose";
 import { safeLink, useInterest, type BalanceRow } from "@/lib/hosted";
+import type { NavLink } from "@/lib/nav-link";
 import type { ViewerKind } from "@/lib/nav-model";
 import { barRuns, type BarRuns, type RunOnPick } from "@/lib/run-place";
 import { useSetRunOn } from "@/lib/run-on";
@@ -465,18 +466,20 @@ export function avatarDot(kind: ViewerKind | undefined, status: StatusInfo | und
  * pre-paint script keeps their room on the next load (html[data-had-balance|computer|placeholders]). Mounted once, in
  * the bar. Nothing is remembered until the viewer and the status are known.
  */
-export function useRememberPills(kind: ViewerKind | undefined): { balance: boolean; computer: boolean; placeholders: boolean } {
+export function useRememberPills(kind: ViewerKind | undefined): { balance: boolean; computer: boolean; placeholders: boolean; navlink: boolean } {
   const status = useShownStatus();
   const viewer = useViewer().data;
   const hydrated = useHydrated();
   const known = !!kind && !!status;
   const balance = known && !!status.viewer?.balance;
+  const navlink = known && !!status.viewer?.navLink;
+  useHadItems("navlink", known ? Number(navlink) : undefined);
   const computer = hydrated && !!kind && viewer?.computer === true;
   const placeholders = usePlaceholdersOn(kind);
   useHadItems("balance", known ? Number(balance) : undefined);
   useHadItems("computer", hydrated && kind ? Number(computer) : undefined);
   useHadItems("placeholders", known ? Number(placeholders) : undefined);
-  return { balance, computer, placeholders };
+  return { balance, computer, placeholders, navlink };
 }
 
 /**
@@ -519,11 +522,21 @@ export function ComputerNoteBlock() {
  * time takes no room, one that had a pill keeps it until the status says otherwise.
  */
 export function BarPills({ kind }: { kind: ViewerKind | undefined }) {
-  const { balance, computer, placeholders } = useRememberPills(kind);
+  const { balance, computer, placeholders, navlink } = useRememberPills(kind);
   const status = useShownStatus();
   const known = !!kind && !!status;
   return (
     <>
+      {known ? (
+        navlink &&
+        status.viewer?.navLink && (
+          <span data-slot="navlink-pill" className={cn("flex shrink-0", PILL_W.navlink)}>
+            <NavLinkPill link={status.viewer.navLink} className="w-full" />
+          </span>
+        )
+      ) : (
+        <span aria-hidden data-slot="navlink-pill" className={cn("hidden shrink-0 [html[data-had-navlink]_&]:block", PILL_W.navlink)} />
+      )}
       {known ? (
         balance &&
         status.viewer && (
@@ -557,4 +570,31 @@ export function BarPills({ kind }: { kind: ViewerKind | undefined }) {
 }
 
 /** Each pill's fixed width: the kept room before the status is known is exactly what the pill takes after. */
-export const PILL_W = { balance: "w-40 xl:w-[184px]", computer: "w-9 xl:w-[140px]", placeholders: "w-[136px]" } as const;
+export const PILL_W = { balance: "w-40 xl:w-[184px]", computer: "w-9 xl:w-[140px]", placeholders: "w-[136px]", navlink: "w-9 min-[1440px]:w-[132px]" } as const;
+
+/**
+ * The billing service's link for the bar (viewer.navLink, src/lib/nav-link.ts): a filled pill, its words from 1440 px
+ * and an icon with its name for screen readers below. `wide`: the words always (the phone's You sheet).
+ */
+export function NavLinkPill({ link, wide, className }: { link: NavLink; wide?: boolean; className?: string }) {
+  return (
+    <IntentLink
+      href={link.url}
+      title={link.label}
+      className={cn(
+        "nav-focus-out inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-2 text-[13px] font-semibold whitespace-nowrap text-primary-foreground nav-hover:bg-primary/90 active:bg-primary/85 motion-safe:transition-colors [@media(pointer:coarse)]:h-11",
+        wide ? "w-full px-4" : "min-[1440px]:px-3.5",
+        className,
+      )}
+    >
+      <Sparkles aria-hidden className="size-4 shrink-0" />
+      <span className={cn("truncate", !wide && "sr-only min-[1440px]:not-sr-only")}>{link.label}</span>
+    </IntentLink>
+  );
+}
+
+/** The service's link first in the phone's You sheet, when it sent one. */
+export function NavLinkBlock() {
+  const link = useShownStatus()?.viewer?.navLink;
+  return link ? <NavLinkPill link={link} wide /> : null;
+}

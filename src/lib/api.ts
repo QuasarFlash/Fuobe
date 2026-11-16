@@ -1066,6 +1066,8 @@ export interface StatusInfo {
     cardText?: string;
     /** The billing service's words for open models in the model menu, by id, in place of "Free" (src/lib/model-marks.ts). */
     marks?: Record<string, string>;
+    /** The billing service's link for the top bar (src/lib/nav-link.ts): its words and a same-site address. */
+    navLink?: { label: string; url: string };
     /** What this studio's GPUs keep off, for a viewer with no GPU of its own: its pickers leave it out (src/lib/pool-rules.ts). */
     pool?: PoolRules;
     /** The billing service's words for the account's balance (src/server/billing.ts). */

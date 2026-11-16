@@ -6,6 +6,7 @@ import { PROVIDERS } from "@/server/providers";
 import { comfyRam, probeComfy } from "@/server/providers/comfyui";
 import { llmBackends } from "@/server/providers/llm";
 import { nothingConnected, type EngineModeName } from "@/lib/connections";
+import { zoneOf } from "@/lib/nav-link";
 import { getSetting, setSetting } from "@/server/settings";
 import { offeredSummary } from "@/server/model-access";
 import { poolOwnModels } from "@/server/pool-own-setup";
@@ -18,7 +19,10 @@ export async function GET(request?: Request) {
   await connection();
   // A guest or an account (public sign-up) sees its own GPU, never the install's providers or servers.
   const viewer = request ? requestViewer(request) : ({ kind: "owner" } as const);
-  if (viewer.kind !== "owner") return Response.json(await visitorStatus(viewer.kind === "account" ? viewer.account : null), { headers: { "Cache-Control": "no-store" } });
+  if (viewer.kind !== "owner") {
+    const zone = viewer.kind === "account" ? zoneOf(request?.headers.get("cookie")) : null;
+    return Response.json(await visitorStatus(viewer.kind === "account" ? viewer.account : null, zone), { headers: { "Cache-Control": "no-store" } });
+  }
   // Both asked first, so the llm provider's label and routing read fresh answers without waiting.
   const [comfy, local] = await Promise.all([probeComfy(true), localSummary()]);
   const ram = comfy ? comfyRam() : undefined;

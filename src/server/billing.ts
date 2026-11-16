@@ -227,6 +227,11 @@ export interface Policy {
    * go to this install's GPUs (src/lib/model-marks.ts; at most MARK_MAX characters each). Absent: "Free" as before.
    */
   marks?: Record<string, string>;
+  /**
+   * A link the top bar shows beside the balance (and the phone's You sheet first), for guests and accounts alike: short
+   * words and a same-site address (src/lib/nav-link.ts). Absent: no link there.
+   */
+  navLink?: { label: string; url: string };
   ttlS: number;
 }
 
@@ -691,14 +696,18 @@ export function refusalStatus(code: RefuseCode | "price-changed"): number {
 
 export const BILLING_HEADER = "x-fuobe-billing";
 
-/** The account's balance (cached 10 s). No service, or no answer: null (nothing to show). */
-export async function balance(accountId: string): Promise<Balance | null> {
+/**
+ * The account's balance (cached 10 s). No service, or no answer: null (nothing to show). `zone`: the browser's own time
+ * zone (src/lib/nav-link.ts cleanZone), so the service's words give a reset's time in the reader's own clock.
+ */
+export async function balance(accountId: string, zone?: string | null): Promise<Balance | null> {
   if (!billingConfigured()) return null;
   const cache = (globalThis.__fuobeBillingBalances ??= new Map());
   const hit = cache.get(accountId);
   if (hit && Date.now() - hit.at < 10_000) return hit.balance;
   try {
-    const b = await call<Balance>("GET", `/v1/balance?account=${encodeURIComponent(accountId)}`, undefined, BILLING_TIMEOUTS.balance);
+    const tz = zone ? `&tz=${encodeURIComponent(zone)}` : "";
+    const b = await call<Balance>("GET", `/v1/balance?account=${encodeURIComponent(accountId)}${tz}`, undefined, BILLING_TIMEOUTS.balance);
     cache.set(accountId, { at: Date.now(), balance: b });
     if (cache.size > 5000) cache.delete(cache.keys().next().value!);
     return b;

@@ -1,5 +1,7 @@
 /** App frame helpers (pure, so they're testable): which link is the open page, full-screen studios, the pre-paint script. */
 
+import { ZONE_COOKIE } from "./nav-link";
+
 export const groupId = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
 /** "New creation" (the top bar, the phone's Create sheet): Home with a fresh composer, so it does more than the Home row. Home drops the flag. */
@@ -49,13 +51,15 @@ export function fullScreenStudio(pathname: string): string | null {
 }
 
 /** The bar's pills whose room is kept from the first paint (use-had-items.ts names, remembered by the bar). */
-export const CHROME_HAD_PILLS = ["balance", "computer", "placeholders"] as const;
+export const CHROME_HAD_PILLS = ["balance", "computer", "placeholders", "navlink"] as const;
 
 /**
  * Inline script that runs while the HTML is parsed, so the app frame has its final shape on the first paint (the
  * server renders one shell for everyone): `data-fullscreen-studio` on a full-screen studio (the phone's tab bar
  * gives it the whole screen), `data-viewer` as this browser last knew it ("fuobe:viewer", as api.ts's VIEWER_KEY:
  * the bar's right side keeps a guest's or an account's room), and `data-had-<pill>` for the bar's pills it showed
- * last (use-had-items.ts). Every read is guarded: blocked storage leaves the defaults.
+ * last (use-had-items.ts). It also keeps the browser's time zone in the fuobe_tz cookie, so the billing service says
+ * when a limit resets in the reader's own time (src/lib/nav-link.ts). Every read is guarded: blocked storage leaves the
+ * defaults.
  */
-export const CHROME_STATE_SCRIPT = `(function(){var d=document.documentElement;try{if(${FULL_SCREEN}.test(location.pathname))d.setAttribute("data-fullscreen-studio","")}catch(e){}try{var v=localStorage.getItem("fuobe:viewer");if(v==="guest"||v==="account"||v==="owner")d.setAttribute("data-viewer",v)}catch(e){}try{${JSON.stringify(CHROME_HAD_PILLS)}.forEach(function(n){var x=localStorage.getItem("fuobe:had:"+n);if(x&&/^[1-9][0-9]?$/.test(x))d.setAttribute("data-had-"+n,x)})}catch(e){}})()`;
+export const CHROME_STATE_SCRIPT = `(function(){var d=document.documentElement;try{if(${FULL_SCREEN}.test(location.pathname))d.setAttribute("data-fullscreen-studio","")}catch(e){}try{var v=localStorage.getItem("fuobe:viewer");if(v==="guest"||v==="account"||v==="owner")d.setAttribute("data-viewer",v)}catch(e){}try{${JSON.stringify(CHROME_HAD_PILLS)}.forEach(function(n){var x=localStorage.getItem("fuobe:had:"+n);if(x&&/^[1-9][0-9]?$/.test(x))d.setAttribute("data-had-"+n,x)})}catch(e){}try{var z=Intl.DateTimeFormat().resolvedOptions().timeZone,c="${ZONE_COOKIE}="+encodeURIComponent(z||"");if(z&&(";"+document.cookie.replace(/ /g,"")+";").indexOf(";"+c+";")<0)document.cookie=c+";path=/;max-age=31536000;samesite=lax"+(location.protocol==="https:"?";secure":"")}catch(e){}})()`;
