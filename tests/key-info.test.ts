@@ -251,30 +251,39 @@ describe("the key never shows", () => {
   });
 });
 
+/**
+ * A fake Date from the real time, moved on by seconds: the session cookies made in beforeAll carry a real expiry, and a
+ * clock set to a fixed day refuses them once that day is behind (auth.ts liveExpiry).
+ */
+function fakeClock(): (seconds: number) => void {
+  const t0 = Date.now();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(t0);
+  return (seconds) => vi.setSystemTime(t0 + seconds * 1000);
+}
+
 describe("how often a provider is asked", () => {
   it("once a minute: a second look within 60 s is the kept answer", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-11-06T10:00:00Z"));
+    const at = fakeClock();
     const first = await ask(ownerCookie);
-    vi.setSystemTime(new Date("2026-11-06T10:00:59Z"));
+    at(59);
     const second = await ask(ownerCookie);
     expect(second.body).toEqual(first.body);
     expect(billingCalls(fal.log)).toBe(1);
     expect(rep.log).toHaveLength(1);
-    vi.setSystemTime(new Date("2026-11-06T10:01:01Z"));
+    at(61);
     await ask(ownerCookie);
     expect(billingCalls(fal.log)).toBe(2);
     expect(rep.log).toHaveLength(2);
   });
 
   it("a refresh asks again, but never twice in 10 s for the same key", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-11-06T10:00:00Z"));
+    const at = fakeClock();
     await ask(cookieA);
-    vi.setSystemTime(new Date("2026-11-06T10:00:05Z"));
+    at(5);
     await ask(cookieA, "?refresh=1");
     expect(billingCalls(fal.log)).toBe(1);
-    vi.setSystemTime(new Date("2026-11-06T10:00:11Z"));
+    at(11);
     await ask(cookieA, "?refresh=1");
     expect(billingCalls(fal.log)).toBe(2);
     expect(rep.log).toHaveLength(2);
@@ -288,15 +297,14 @@ describe("how often a provider is asked", () => {
   });
 
   it("keeps a busy provider's answer 15 s only", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-11-06T10:00:00Z"));
+    const at = fakeClock();
     fal.script = (r) => (r.path.startsWith("/v1/account/billing") ? { status: 429, body: fixture("fal-429.json") } : null);
     expect((await ask(ownerCookie)).body.providers[0].state).toBe("link");
-    vi.setSystemTime(new Date("2026-11-06T10:00:14Z"));
+    at(14);
     await ask(ownerCookie);
     expect(billingCalls(fal.log)).toBe(1);
     fal.script = null;
-    vi.setSystemTime(new Date("2026-11-06T10:00:16Z"));
+    at(16);
     expect((await ask(ownerCookie)).body.providers[0].state).toBe("ok");
     expect(billingCalls(fal.log)).toBe(2);
   });
