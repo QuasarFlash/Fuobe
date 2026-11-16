@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { Generation } from "@/lib/catalog/types";
+import { demoPace } from "./helpers/demo-pace";
 import { tempDir } from "./helpers/temp-dir";
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -35,13 +36,8 @@ const mixedEstimateRoute = await import("@/app/api/mixed-media/estimate/route");
 const mixedRetryRoute = await import("@/app/api/mixed-media/retry/route");
 const mixedProgressRoute = await import("@/app/api/mixed-media/progress/route");
 const { mockProvider } = await import("@/server/providers/mock");
-
-// The placeholders here run at 5× the demo's pace (a demo clip takes 7 s): these chains have up to a dozen steps.
-const demoPoll = mockProvider.poll.bind(mockProvider);
-mockProvider.poll = (ctx) => {
-  const started = Number(ctx.meta.startedAt);
-  return demoPoll({ ...ctx, meta: { ...ctx.meta, startedAt: Date.now() - (Date.now() - started) * 5 } });
-};
+// These chains have up to a dozen demo steps.
+demoPace(mockProvider, 5);
 
 const json = (method: string, body?: unknown) =>
   new Request("http://x/api", { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });

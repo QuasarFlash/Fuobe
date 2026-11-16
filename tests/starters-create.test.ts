@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { EpisodeSettings, EpisodeView } from "@/lib/catalog/faceless";
+import { demoPace } from "./helpers/demo-pace";
 import { tempDir } from "./helpers/temp-dir";
 
 // Every ready-made starter of Faceless Studio, Content Factory, Explainer, Ads Studio, Click to Ad and Marketing Studio,
@@ -36,6 +37,9 @@ const { STARTERS, facelessTopic, getStarter } = await import("@/lib/starters/cat
 const { getPreset } = await import("@/lib/catalog/content-factory");
 const { defaultSettings, genreInfo } = await import("@/lib/catalog/faceless");
 const { TEMPLATE_INDEX } = await import("@/lib/catalog/marketing");
+const { mockProvider } = await import("@/server/providers/mock");
+// Every starter runs its whole chain of demo steps.
+demoPace(mockProvider, 5);
 
 beforeAll(() => {
   setSetting("demoMode", "auto");
