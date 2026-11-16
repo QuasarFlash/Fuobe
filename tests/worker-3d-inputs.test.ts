@@ -263,7 +263,7 @@ describe("the place gate and the files each step reads", () => {
     const req = angle(mine(TINY_PNG, "image/png", "me.png"), mine(Buffer.from("{}"), "application/json", "view.json"));
     expect(hosted.requestFileKinds(req as never).sort()).toEqual(["file", "image"]);
     const q = await poolQuote(account, req as never, undefined);
-    expect(q?.quote).toMatchObject({ allowed: false, text: "This file runs on your own GPU" });
+    expect(q?.quote).toMatchObject({ allowed: false, text: "This file runs self-hosted" });
   });
 
   it("a later step's files count too: a 3D model handed on is taken, a clip only where the workers take clips", () => {

@@ -199,7 +199,7 @@ describe("the engine switch a studio starts on", () => {
     // runs off it runs once on the key too (runOnceWithKey), and the switch stays where it was.
     const composer = readFileSync("src/components/studio/composer.tsx", "utf8");
     expect(composer).toMatch(/const onRunWithKey = viewerInfo\?\.hosted \? \(a: TroubleAction\) => submitRef\.current\(undefined, a\) : runOnceWithKey;/);
-    expect(composer).toMatch(/const onKey = withKey \? onCloudKey\(withVoiceFirst, withKey\) : withVoiceFirst;/);
+    expect(composer).toMatch(/const onKey = withKey \? onCloudKey\(withFixFaces, withKey\) : withFixFaces;/);
     expect(composer).toMatch(/onClick=\{\(\) => \(viewerInfo\?\.hosted \? engineForNextPage\("cloud"\) : setEngine\("cloud"\)\)\}/);
   });
 

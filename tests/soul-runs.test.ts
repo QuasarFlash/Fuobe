@@ -45,7 +45,7 @@ describe("Fuobe Soul on both engines", () => {
     expect(pickEngine(m, undefined, "cloud", () => false)).toBe("cloud");
     expect(pickEngine(m, undefined, "both", (e) => e === "cloud")).toBe("cloud");
     expect(pickEngine(m, undefined, "both", () => true)).toBe("open");
-    expect(() => pickEngine(m, "cloud", "open", () => true)).toThrow(/open source only/);
+    expect(() => pickEngine(m, "cloud", "open", () => true)).toThrow(/on the cloud isn't available here\. Switch to Open source/);
   });
 
   it("applies the look: triggers in front, the user's words, the look, the tail, its LoRAs", () => {
@@ -199,7 +199,7 @@ describe("Fuobe Soul through the server", () => {
     expect(g.engine).toBe("cloud");
     expect(g.request.engine).toBe("cloud");
     setSetting("engineMode", "open");
-    expect(() => createGenerations({ feature: "image", modelId: "fuobe-soul", prompt: "a fox", engine: "cloud" })).toThrow(/open source only/);
+    expect(() => createGenerations({ feature: "image", modelId: "fuobe-soul", prompt: "a fox", engine: "cloud" })).toThrow(/on the cloud isn't available here\. Switch to Open source/);
     const [o] = createGenerations({ feature: "image", modelId: "fuobe-soul", prompt: "a fox" });
     expect(o.engine).toBe("open");
     setSetting("engineMode", "both");

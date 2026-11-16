@@ -44,7 +44,7 @@ describe("the result panel's action buttons", () => {
     expect(viewer).toMatch(/const cls = cn\("min-w-0"/);
     expect(viewer).not.toMatch(/\{icon\} \{label\}/);
     const grid = /const ACTION_GRID =\s*"([^"]+)"/.exec(viewer)?.[1] ?? "";
-    for (const c of ["@container/actions", "grid-cols-2", "[&>*]:h-auto", "[&>*]:min-h-7", "[&>*]:whitespace-normal", "[&_[data-label]]:line-clamp-2", "[&_[data-label]]:whitespace-normal"]) expect(grid).toContain(c);
+    for (const c of ["@container/actions", "grid-cols-2", "[&>*]:h-auto", "[&>*]:min-h-8", "[&>*]:whitespace-normal", "[&_[data-label]]:line-clamp-2", "[&_[data-label]]:whitespace-normal"]) expect(grid).toContain(c);
   });
 
   it("show the short chip only where the grid has room, the mark elsewhere, and nothing to the owner", () => {

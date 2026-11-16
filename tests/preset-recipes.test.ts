@@ -116,7 +116,13 @@ describe("spot checks", () => {
     expect(presetRecipe(p("effect-set-on-fire"), "open", inCatalog)?.made).toBe(true);
     const dis = presetRecipe(p("effect-disintegration"), "open", inCatalog)!;
     expect(dis.route.modelId).toBe("oss-minimax-h3");
-    expect(dis.made).toBe(false);
+    // Its H3 clip is out; a preset whose cover is still an Ideogram 4 still gets the route without the label.
+    expect(PRESET_PREVIEWS["effect-disintegration"]?.model).toBe("minimax-h3");
+    expect(dis.made).toBe(true);
+    const still = presetRecipe(p("effect-burning-man"), "open", inCatalog)!;
+    expect(PRESET_PREVIEWS["effect-burning-man"]?.model).toBe("ideogram4");
+    expect(still.route.modelId).toBe("oss-minimax-h3");
+    expect(still.made).toBe(false);
   });
 
   it("the presets made at Best open at Best", () => {

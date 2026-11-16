@@ -71,7 +71,8 @@ const ROOT = path.resolve(__dirname, "..");
 
 /** A retired model or training id in code (a stored one resolves through replaced.ts; nothing else names it). */
 const RETIRED_IDS = new RegExp(`["'\`](${[...Object.keys(REPLACED_BY), ...Object.keys(TRAINING_REPLACED_BY)].join("|")})["'\`]`);
-const RETIRED_ID_ALLOWED = new Set(["src/lib/catalog/replaced.ts", "src/server/db.ts"]);
+// fx-pairs.generated.ts is keyed by Fuobe FX item ids (genjutsu-<mode>), which can share a retired model id's spelling.
+const RETIRED_ID_ALLOWED = new Set(["src/lib/catalog/replaced.ts", "src/server/db.ts", "src/lib/fx-pairs.generated.ts"]);
 const CODE = /\.(ts|tsx|mts|js|mjs|cjs)$/;
 
 function walk(p: string, out: string[]) {

@@ -79,10 +79,12 @@ describe("Character swap's ComfyUI graphs", () => {
         else if (PACK.test(c)) expect(subset[c], c).toBeNull();
         else expect(subset[c], c).not.toBeNull();
       }
-      const w = entry(id);
-      expect(w.validated).toBe(false);
-      expect((w as typeof w & { validationError?: string }).validationError).toMatch(/missing_node_type/);
     }
+    // The Original passed its GPU test on a server with the pack; the Relay's graph still names the node it lacks.
+    expect(entry(SWAP).validated).toBe(true);
+    const relay = entry(RELAY);
+    expect(relay.validated).toBe(false);
+    expect((relay as typeof relay & { validationError?: string }).validationError).toMatch(/missing_node_type/);
   });
 
   it("every media loader is bound, and the anchor is image2 on the Original's graph only", () => {

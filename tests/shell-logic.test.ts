@@ -822,7 +822,8 @@ describe("landmarks", () => {
       fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : e.name.endsWith(".tsx") ? [path.join(dir, e.name)] : []));
     const root = path.resolve(__dirname, "../src");
     const mains = [...files(path.join(root, "components")), ...files(path.join(root, "app/(studio)"))]
-      .filter((f) => /<main[\s>]/.test(fs.readFileSync(f, "utf8")))
+      // Comment lines may name the landmark; only markup counts.
+      .filter((f) => /<main[\s>]/.test(fs.readFileSync(f, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\/?\*)/.test(l)).join("\n")))
       .map((f) => path.relative(root, f).split(path.sep).join("/"));
     expect(mains).toEqual(["components/nav/studio-chrome.tsx"]);
   });

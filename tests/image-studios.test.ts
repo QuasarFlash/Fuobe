@@ -336,7 +336,8 @@ describe("moodboards: routing per model", () => {
   it("curated sets are Fuobe's own looks: Fuobe ids and words, no description or preview copied from the parity research", () => {
     const base = CURATED_SETS["soul-v2"];
     expect(base).toHaveLength(33);
-    expect(base.every((c) => c.id.startsWith("v2-") && !c.preview)).toBe(true);
+    // A preview, where there is one, is the look's own Fuobe cover (template-covers.generated.ts).
+    expect(base.every((c) => c.id.startsWith("v2-") && (!c.preview || c.preview.src.startsWith(`/previews/templates/soul/${c.id}.`)))).toBe(true);
     const theirs = new Map(SOUL_RESEARCH.filter((p) => p.model === "soul-v2").map((p) => [p.name, p.description]));
     expect(base.every((c) => c.description !== theirs.get(c.name))).toBe(true);
   });

@@ -413,10 +413,16 @@ describe("the composer follows the engine, not a person's pick", () => {
     expect(engineSwitchModel({ model: getModel("minimax-h3")!, preset: jib, engine: "open", from: "cloud", defaults, has: inCatalog })).toBe("oss-minimax-h3");
     expect(engineSwitchModel({ model: view("fuobe-dop", "cloud"), preset: jib, engine: "cloud", from: "open", defaults, has: inCatalog })).toBe("fuobe-dop-ltx");
     expect(engineSwitchModel({ model: view("fuobe-dop", "open"), preset: jib, engine: "open", from: "open", defaults, has: inCatalog })).toBeUndefined();
-    // The effects with a start-frame step (relight, Mixed Media) stay on Fuobe DoP, which runs the step.
+    // The effects with a start-frame step (relight, Mixed Media) open on MiniMax H3 too, as their recipes made their
+    // covers; without H3 in the catalog they stay on Fuobe DoP, which runs the step.
     const steps = EFFECTS.filter((p) => p.prestep);
     expect(steps).toHaveLength(38);
-    for (const p of steps) for (const engine of ["open", "cloud"] as const) expect(presetModel(p, engine, inCatalog), p.id).toBe(p[engine]!.modelId);
+    for (const p of steps) {
+      expect(p.recipe?.clip, p.id).toBeTruthy();
+      expect(presetModel(p, "open", inCatalog), p.id).toBe("oss-minimax-h3");
+      expect(presetModel(p, "cloud", inCatalog), p.id).toBe("minimax-h3");
+      for (const engine of ["open", "cloud"] as const) expect(presetModel(p, engine, noRecipe), p.id).toBe(p[engine]!.modelId);
+    }
     // A colour-grade effect stays on Fuobe DoP on both engines, whose clip carries the grade (as its cover was made).
     for (const engine of ["open", "cloud"] as const) expect(presetModel(getPreset("effect-candy-pink")!, engine, inCatalog)).toBe("fuobe-dop");
     // Fuobe DoP picked: its own route runs as before (LoRAs, the trigger, its settings).
