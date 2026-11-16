@@ -47,8 +47,8 @@ describe("offline planner (U18)", () => {
     // MiniMax H3, the Video studio's default, makes one shot a clip: a 3-shot clip runs on the next model in Best that cuts shots.
     expect(jobs[1]).toMatchObject({ model_id: "seedance-2-5", after: 0, shots: 3 });
     expect(p.say).toMatch(/still first, then animate it as a 3-shot clip/);
-    // The open engine picks the open defaults (the Image studio's is Ideogram 4).
-    expect((agent.offlinePlan("A photo of a lighthouse, then animate it", "open")!.input as { jobs: { model_id: string }[] }).jobs.map((j) => j.model_id)).toEqual(["oss-ideogram-4", "oss-minimax-h3"]);
+    // The open engine picks the open defaults (the Image studio's is Auto).
+    expect((agent.offlinePlan("A photo of a lighthouse, then animate it", "open")!.input as { jobs: { model_id: string }[] }).jobs.map((j) => j.model_id)).toEqual(["oss-auto-image", "oss-minimax-h3"]);
   });
 
   it("reads 'N portraits' as N takes and 'N-shot' video as one multi-shot clip", () => {

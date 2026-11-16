@@ -16,6 +16,7 @@ const { GET: listModels } = await import("@/app/api/models/route");
 const { POST: postGeneration } = await import("@/app/api/generations/route");
 const { listGenerations } = await import("@/server/generations");
 const { setSetting } = await import("@/server/settings");
+const { asOwnRequest } = await import("@/server/api-caller");
 // Placeholders where nothing is connected, as the studio once did by default ("auto": code in this process only).
 beforeAll(() => setSetting("demoMode", "auto"));
 
@@ -61,13 +62,13 @@ describe("GET /api/models", () => {
   });
 
   it("names the studios' default models, and follows the engine mode", async () => {
-    expect((await models()).body.defaults).toMatchObject({ image: { cloud: "nano-banana-pro", open: "oss-ideogram-4" }, video: { cloud: "minimax-h3", open: "oss-minimax-h3" } });
+    expect((await models()).body.defaults).toMatchObject({ image: { cloud: "nano-banana-pro", open: "oss-auto-image" }, video: { cloud: "minimax-h3", open: "oss-minimax-h3" } });
     setSetting("engineMode", "open");
     try {
       const { body } = await models("?kind=image");
       expect(body.engineMode).toBe("open");
       expect(body.items.every((m) => m.engine === "open")).toBe(true);
-      expect(body.defaults.image).toEqual({ open: "oss-ideogram-4" });
+      expect(body.defaults.image).toEqual({ open: "oss-auto-image" });
     } finally {
       setSetting("engineMode", "both");
     }
@@ -158,7 +159,8 @@ describe("POST /api/generations?preview=1", () => {
 });
 
 describe("POST /api/generations: where an owner's run came from", () => {
-  const send = (body: unknown, headers: Record<string, string> = {}) => postGeneration(new Request("http://localhost/api/generations", { method: "POST", headers, body: JSON.stringify(body) }));
+  // Each call is a request of its own, as on a server: a token one request was sent with never marks the next.
+  const send = (body: unknown, headers: Record<string, string> = {}) => asOwnRequest(() => postGeneration(new Request("http://localhost/api/generations", { method: "POST", headers, body: JSON.stringify(body) })));
   const stored = (id: string) => listGenerations({ limit: 200, steps: true }).find((g) => g.id === id)!.request;
   const idOf = async (res: Response) => {
     expect(res.status).toBeLessThan(300);

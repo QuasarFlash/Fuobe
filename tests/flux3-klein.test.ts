@@ -248,10 +248,10 @@ describe("FLUX 3 Klein in the catalog, both engines", () => {
   });
 
   it("sits in the Image studio's Best list on your GPU, beside Ideogram 4 and Qwen-Image 2.1; the Edit studio offers it outside its Best list", () => {
-    expect(IMAGE_STUDIO.defaultModels).toEqual({ cloud: "nano-banana-pro", open: "oss-ideogram-4" });
+    expect(IMAGE_STUDIO.defaultModels).toEqual({ cloud: "nano-banana-pro", open: "oss-auto-image" });
     expect(EDIT_STUDIO.defaultModels).toEqual({ cloud: "nano-banana-pro", open: "oss-qwen-image-21" });
     const image = studioBest(filterModels(MODELS, { kind: "image", ops: IMAGE_STUDIO.pickerOps }), "open", IMAGE_STUDIO.defaultModels.open, IMAGE_STUDIO.ops);
-    expect(image.slice(0, 3)).toEqual(["oss-ideogram-4", "oss-qwen-image-21", "oss-flux3-klein"]);
+    expect(image.slice(0, 4)).toEqual(["oss-auto-image", "oss-ideogram-4", "oss-qwen-image-21", "oss-flux3-klein"]);
     const editable = filterModels(MODELS, { kind: "image", ops: EDIT_STUDIO.ops });
     expect(editable.map((m) => m.id)).toContain("oss-flux3-klein");
     const edit = studioBest(editable, "open", EDIT_STUDIO.defaultModels.open, EDIT_STUDIO.ops);

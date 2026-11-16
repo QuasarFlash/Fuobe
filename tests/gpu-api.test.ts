@@ -32,8 +32,8 @@ const generations = await import("@/app/api/generations/route");
 
 const idx = loadIndex();
 const Z = "z-image-turbo-t2i";
-/** The Image studio's default on your GPU (Ideogram 4: 24 GB, ComfyUI 0.42.0). */
-const I4 = "ideogram4-t2i";
+/** The Image studio's default on your GPU: Auto, whose routes are Krea 2 Realism's (words) and Qwen-Image 2.1's (edits). */
+const AUTO = ["krea2-realism-t2i", "qwen-image-21-edit"];
 const fakes: FakeComfy[] = [];
 afterAll(async () => {
   globalThis.__fuobeGpuTestTransport = undefined;
@@ -101,7 +101,7 @@ describe("an account", () => {
 
   it("checks its own GPU only, streams the lines, then the board, reads only, and writes an audit row", async () => {
     const big = { version: "0.42.1", devices: [{ name: "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync", type: "cuda", vramGb: 24 }] };
-    const f = await fake(readyFor(idx, [Z, I4], { manager: { api: "v4", installed: {} }, argv: ["main.py", "--enable-manager"], ...big }));
+    const f = await fake(readyFor(idx, [Z, ...AUTO], { manager: { api: "v4", installed: {} }, argv: ["main.py", "--enable-manager"], ...big }));
     const { cookie, id } = account(f);
     const { res, events } = await runCheck(cookie);
     expect(res.status).toBe(200);
