@@ -45,6 +45,9 @@ const dependsOn = (id: string) => {
   const v = (db().prepare("SELECT depends_on FROM generations WHERE id = ?").get(id) as { depends_on: string | null }).depends_on;
   return !v ? [] : v.startsWith("[") ? (JSON.parse(v) as string[]) : [v];
 };
+// Fails a step the way a provider does (a stopped step stops the steps waiting for it instead of failing them).
+const failStep = (id: string, error: string) =>
+  db().prepare("UPDATE generations SET status = 'failed', error = ?, completed_at = ? WHERE id = ? AND status IN ('queued', 'running')").run(error, Date.now(), id);
 const count = () => (db().prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number }).n;
 
 describe("Cinema retry", () => {
@@ -68,7 +71,7 @@ describe("Cinema retry", () => {
     const p = cinema.createProject({ name: "Chain" });
     const { items } = generateInProject(p.id, { ...VIDEO, engine: "open", settings: CIRCUS });
     expect(items.map((g) => g.modelId)).toEqual(["fuobe-cinema", "oss-palette-video"]);
-    await gens.cancelGeneration(items[0].id);
+    expect(failStep(items[0].id, "The provider couldn't finish this run").changes).toBe(1);
     expect((await settle(items[1].id)).status).toBe("failed");
 
     // Retrying the dependent finds the broken step it waits for; retrying the main finds its dependent.

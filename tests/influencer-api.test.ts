@@ -39,6 +39,10 @@ async function settle(id: string, ms = 40_000) {
   }
 }
 
+// Fails a step the way a provider does (a stopped step stops the steps waiting for it instead of failing them).
+const failStep = (id: string, error: string) =>
+  db().prepare("UPDATE generations SET status = 'failed', error = ?, completed_at = ? WHERE id = ? AND status IN ('queued', 'running')").run(error, Date.now(), id);
+
 describe("/api/influencer", () => {
   it("prices a cloud sheet on Fuobe Soul (Nano Banana Pro or Seedream 5.0 Pro when asked); a retired model id runs the default", async () => {
     const cloud = await (await post({ engine: "cloud", state, start: "scratch" }, true)).json();
@@ -87,7 +91,7 @@ describe("/api/influencer", () => {
 
   it("retries a failed sheet in its run, but not a face pass whose sheet never came", async () => {
     const run = await (await post({ engine: "open", state, start: "face", photo: upload() })).json();
-    await gens.cancelGeneration(run.items[0].id);
+    expect(failStep(run.items[0].id, "The provider couldn't finish this run").changes).toBe(1);
     const pass = await settle(run.sheet.id);
     expect(pass.status).toBe("failed");
     // Both steps run again, chained, in the same batch; the failed ones go to the Trash.

@@ -59,6 +59,10 @@ async function settle(id: string, ms = 90_000): Promise<Generation> {
   }
 }
 
+/** A step that fails as a provider fails it (a Stop would stop the steps after it too, not fail them). */
+const failStep = (id: string, error: string) =>
+  db().prepare("UPDATE generations SET status = 'failed', error = ?, completed_at = ? WHERE id = ? AND status IN ('queued', 'running')").run(error, Date.now(), id);
+
 const dependsOn = (id: string) => {
   const v = (db().prepare("SELECT depends_on FROM generations WHERE id = ?").get(id) as { depends_on: string | null }).depends_on;
   return !v ? [] : v.startsWith("[") ? (JSON.parse(v) as string[]) : [v];
@@ -478,9 +482,9 @@ describe("Mixed Media renders", () => {
 
   it("tries a failed render again with the same settings, from the step that failed (the cut is kept)", async () => {
     const { final, items } = await mixed.createMixed(mm({ engine: "cloud", mode: "fast", range: { start: 1, end: 4 } }) as never);
-    // The restyle stops: the soundtrack step then fails with the generic "An earlier step didn't finish".
+    // The restyle fails: the soundtrack step then fails with the generic "An earlier step didn't finish".
     await settle(items[0].id);
-    await gens.cancelGeneration(items[1].id);
+    failStep(items[1].id, "The provider couldn't finish this run");
     expect(await settle(final.id)).toMatchObject({ status: "failed", error: "An earlier step didn't finish" });
     const res = await mixedRetryRoute.POST(json("POST", { id: final.id, requestId: "mm-retry-0001" }));
     expect(res.status).toBe(201);
@@ -663,11 +667,11 @@ describe("Mixed Media renders", () => {
   it("says which frame failed and why, not just that an earlier step didn't finish", async () => {
     const { final } = await mixed.createMixed(mm({ engine: "cloud", range: { start: 1, end: 2 }, fps: 4 }) as never);
     const edits = gens.listGenerations({ batchId: final.batchId!, features: ["mixed-media-frame-step"], limit: 50 }).sort((a, b) => a.request.step!.index - b.request.step!.index);
-    await gens.cancelGeneration(edits[1].id);
+    failStep(edits[1].id, "Refused by the safety filter");
     expect(await settle(final.id)).toMatchObject({ status: "failed" });
     const res = await mixedProgressRoute.GET(new Request(`http://x/api/mixed-media/progress?id=${final.id}`));
     const progress = await res.json();
-    expect(progress).toMatchObject({ total: 4, failed: { label: "Frame 2 of 4", error: "Canceled" } });
+    expect(progress).toMatchObject({ total: 4, failed: { label: "Frame 2 of 4", error: "Refused by the safety filter" } });
     expect((await mixedProgressRoute.GET(new Request("http://x/api/mixed-media/progress"))).status).toBe(400);
     expect((await mixedProgressRoute.GET(new Request("http://x/api/mixed-media/progress?id=nope"))).status).toBe(404);
   });
@@ -691,7 +695,7 @@ describe("Mixed Media renders", () => {
   it("names the step that failed when no frame did (the extraction), not frame 1", async () => {
     const { final, items } = await mixed.createMixed(mm({ engine: "cloud", range: { start: 1, end: 2 }, fps: 4 }) as never);
     const extract = items.find((g) => g.op === "extract-frames")!;
-    await gens.cancelGeneration(extract.id);
+    failStep(extract.id, "The provider couldn't finish this run");
     expect(await settle(final.id)).toMatchObject({ status: "failed" });
     const progress = mixed.framesProgress(final.id)!;
     expect(progress.total).toBe(4);
