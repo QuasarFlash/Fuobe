@@ -38,7 +38,7 @@ import { finishSteps, mosaicPixels, unionMasks } from "@/lib/soul-post";
 import { ANGLES_ORIGINAL, MOSAIC_SCALE } from "@/lib/catalog/open-tools";
 import { computeDimensions } from "@/lib/comfy";
 import { captionFromWords, captionWords, parseCaption } from "@/lib/ideogram-caption";
-import { AUTO_IMAGE, AUTO_LARGE_MODELS, autoCandidates, autoModelsFor, autoNext, autoPatterns, autoResolution, nextDeclinedFallback } from "@/lib/auto-image";
+import { AUTO_IMAGE, AUTO_LARGE_MODELS, autoCandidates, autoModelsFor, autoNext, autoPatterns, autoResolution, nextDeclinedFallback, triggerOrder } from "@/lib/auto-image";
 import { h3Frames, h3Prompt, inH3Layout } from "@/lib/h3-prompt";
 import { h3ReferenceTags, h3TalkPrompt } from "@/lib/h3-references";
 import {
@@ -1464,6 +1464,11 @@ function autoPatternsNow(): ReturnType<typeof autoPatterns> {
   return autoPatternCache.patterns;
 }
 
+/** Auto's order for prompts the patterns match, as saved in Settings (the built-in order when none is). */
+function autoTriggerNow(): string[] {
+  return triggerOrder(getSetting("autoTriggerModels"), getModel);
+}
+
 /**
  * A run of Auto (src/lib/auto-image.ts) as the model it picks runs it: the pick it carries (a run planned again: a resend,
  * a run that waited to enter the line, Auto's next model after the one before failed) while it is one of Auto's models
@@ -1484,9 +1489,9 @@ function autoRouted(req: GenerationRequest): GenerationRequest {
   if (req.auto) {
     const m = getModel(req.auto.model);
     const op = (req.op && m?.routes.some((r) => r.op === req.op) ? req.op : undefined) ?? (images ? "edit" : "t2i");
-    if (autoModelsFor(op).includes(req.auto.model)) return sized({ ...req, modelId: req.auto.model, op }, req.auto.model);
+    if (autoModelsFor(op, autoTriggerNow()).includes(req.auto.model)) return sized({ ...req, modelId: req.auto.model, op }, req.auto.model);
   }
-  const c = autoCandidates({ prompt: req.prompt, op: req.op, images }, autoPatternsNow());
+  const c = autoCandidates({ prompt: req.prompt, op: req.op, images }, autoPatternsNow(), autoTriggerNow());
   const op: Operation = c.why === "edit" ? (req.op && req.op !== "t2i" ? req.op : "edit") : "t2i";
   const runs = (id: string) => {
     const m = getModel(id);
@@ -3333,7 +3338,8 @@ function declinedFallback(stored: GenerationRequest, modelId: string): Generatio
  * again in its place: the same run (its id, its place, its turn in the line, its billing hold), as the same job of its
  * batch, through the same submit as every run (this install's workers, the owner's ComfyUI, an account's own GPU), never
  * by a model that tried it before. A run of Auto goes to Auto's models left in its order (src/lib/auto-image.ts: MiniMax H3
- * Image where the GPUs can take it, Krea 2 Realism and MOSS-Image, never Ideogram 4), each at most once, and keeps Auto,
+ * Image where the GPUs can take it, Krea 2 Realism and MOSS-Image, or the saved order for prompts the patterns match;
+ * never Ideogram 4), each at most once, and keeps Auto,
  * its pick saying why (`why: "fallback"`, or "declined" after Ideogram 4 declined an older run); Ideogram 4 picked by name goes to DECLINED_FALLBACKS in order and
  * names the model that made it (its model and its request's notice). Each next model is the first switched on that goes
  * where the run went, and only when the one before fails (declinedFails).
@@ -3358,7 +3364,7 @@ function declinedAgain(r: Row, declined: DeclinedMeta, later = false): boolean {
     const tried = auto ? [...new Set([...(declined.tried ?? []), r.model_id])] : undefined;
     const order: string[] = [];
     // (A model whose lane needs a large GPU only where the GPUs the run went to can take it: src/server/auto-gpu.ts.)
-    if (tried) order.push(...autoNext(autoCandidates({ prompt: stored.prompt, op: "t2i" }, autoPatternsNow()).models, tried).filter((m) => !AUTO_LARGE_MODELS.has(m) || there(() => autoFitsHere(m, "t2i"))));
+    if (tried) order.push(...autoNext(autoCandidates({ prompt: stored.prompt, op: "t2i" }, autoPatternsNow(), autoTriggerNow()).models, tried).filter((m) => !AUTO_LARGE_MODELS.has(m) || there(() => autoFitsHere(m, "t2i"))));
     else for (let m = nextDeclinedFallback(declined.model); m; m = nextDeclinedFallback(m)) order.push(m);
     const why = declined.cause === "failed" ? "fallback" : "declined";
     for (const m of order) {

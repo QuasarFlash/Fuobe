@@ -20,7 +20,7 @@ export function withAutoPattern(saved: string, line: string): string | null {
 
 /**
  * The owner's "Add a pattern" on a run Ideogram 4 declined: a word, phrase or pattern (the words selected on the page, to
- * start with) goes on Auto's list in Settings, so Auto starts such prompts on Krea 2 Realism and their run details name
+ * start with) goes on Auto's list in Settings, so Auto starts such prompts on the models set for them and their run details name
  * the line. Owner only: the settings it changes are the owner's (an account gets a 403).
  */
 export function AddAutoPattern({ className }: { className?: string }) {
@@ -41,7 +41,7 @@ export function AddAutoPattern({ className }: { className?: string }) {
       const res = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoImagePatterns: next }) });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok || body.error) throw new Error(body.error ?? "Couldn't save the pattern");
-      toast.success("Added: Auto sends prompts like this to Krea 2 Realism");
+      toast.success("Added: Auto sends prompts like this to the models set for the list");
       setLine(null);
     } catch (e) {
       toast.error((e as Error).message);

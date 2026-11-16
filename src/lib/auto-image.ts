@@ -17,13 +17,13 @@ export const AUTO_NAME = "Auto";
  * run goes to can't take it, Auto starts on the next model.
  */
 export const AUTO_LEAD_MODEL = "oss-minimax-h3-image";
-/** Next for a plain prompt, and first for a prompt the setting's patterns match: natural skin, light and faces. */
+/** Next for a plain prompt, and first in the built-in order for prompts the patterns match: natural skin, light and faces. */
 export const AUTO_PHOTO_MODEL = "oss-krea2-realism";
 /** Next for lettering (posters, logos, signs, words in quotes): MOSS-Image follows the words and draws them in place. */
 export const AUTO_TEXT_MODEL = "oss-moss-image";
 /**
  * Auto's text-to-image models, in order for a plain prompt (lettering takes MOSS-Image before Krea 2 Realism; a prompt the
- * patterns match starts on Krea 2 Realism). When one is switched off or can't run here, the run is planned on the next;
+ * patterns match follows the order for matched prompts, DEFAULT_TRIGGER_MODELS or the saved one). When one is switched off or can't run here, the run is planned on the next;
  * when it fails, the next makes the same run (src/server/generations.ts autoFails), each model at most once.
  */
 export const AUTO_T2I_MODELS = [AUTO_LEAD_MODEL, AUTO_PHOTO_MODEL, AUTO_TEXT_MODEL] as const;
@@ -48,10 +48,71 @@ export const AUTO_EDIT_MODELS: Readonly<Partial<Record<Operation, readonly strin
   outpaint: ["oss-qwen-image-21"],
 };
 
-/** The models Auto may plan an operation on: text to image on AUTO_T2I_MODELS, the others on AUTO_EDIT_MODELS. */
-export const autoModelsFor = (op: Operation): readonly string[] => (op === "t2i" ? AUTO_T2I_MODELS : (AUTO_EDIT_MODELS[op] ?? []));
+/**
+ * The built-in order for a prompt the setting's patterns match. Settings → Auto image model can save another
+ * (autoTriggerModels, key auto.triggerModels: model ids, comma-separated); an empty value means this one.
+ */
+export const DEFAULT_TRIGGER_MODELS: readonly string[] = [AUTO_PHOTO_MODEL, AUTO_LEAD_MODEL, AUTO_TEXT_MODEL];
+/** How many models the order may list. */
+export const AUTO_TRIGGER_MAX = 10;
 
-/** Every model Auto may plan a run on. */
+/** The fields of a catalog model the order's checks read. */
+export interface AutoModelLike {
+  engine: string;
+  kind: string;
+  hidden?: boolean;
+  routes: readonly { op: string }[];
+}
+
+/** A model the order may list: an open-engine image model in the catalog that makes text to image (never Auto itself). */
+export const autoT2iModel = (id: string, m: AutoModelLike | undefined): boolean =>
+  !!m && id !== AUTO_IMAGE && m.engine === "open" && m.kind === "image" && !m.hidden && m.routes.some((r) => r.op === "t2i");
+
+/** The setting's value as model ids, in order (comma-separated; blanks left out). */
+export const triggerModelIds = (text: string): string[] =>
+  text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/**
+ * Why the order can't be saved, one line per problem (empty: it can): 1 to AUTO_TRIGGER_MAX models, each one the catalog
+ * knows that makes text to image on the open engine, none twice. An empty value is the built-in order.
+ */
+export function autoTriggerModelsProblems(text: string, lookup: (id: string) => AutoModelLike | undefined): string[] {
+  if (!text.trim()) return [];
+  const ids = triggerModelIds(text);
+  const problems: string[] = [];
+  if (!ids.length) problems.push("List at least one model");
+  if (ids.length > AUTO_TRIGGER_MAX) problems.push(`Keep it to ${AUTO_TRIGGER_MAX} models`);
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const m = lookup(id);
+    if (!m) problems.push(`${id.slice(0, 80)} isn't a model this install has`);
+    else if (!autoT2iModel(id, m)) problems.push(`${id} doesn't make pictures from words on the open engine`);
+    if (seen.has(id)) problems.push(`${id.slice(0, 80)} is listed twice`);
+    seen.add(id);
+  }
+  return [...new Set(problems)];
+}
+
+/**
+ * The saved order as Auto uses it: the models it may list, in order, each once. The built-in order when the value is
+ * empty or lists none it may (a model the catalog no longer has is left out).
+ */
+export function triggerOrder(text: string, lookup: (id: string) => AutoModelLike | undefined): string[] {
+  const ids = [...new Set(triggerModelIds(text))].filter((id) => autoT2iModel(id, lookup(id))).slice(0, AUTO_TRIGGER_MAX);
+  return ids.length ? ids : [...DEFAULT_TRIGGER_MODELS];
+}
+
+/**
+ * The models Auto may plan an operation on: text to image on AUTO_T2I_MODELS and the order for matched prompts (`trigger`,
+ * DEFAULT_TRIGGER_MODELS when not given), the others on AUTO_EDIT_MODELS.
+ */
+export const autoModelsFor = (op: Operation, trigger: readonly string[] = DEFAULT_TRIGGER_MODELS): readonly string[] =>
+  op === "t2i" ? [...new Set([...AUTO_T2I_MODELS, ...trigger])] : (AUTO_EDIT_MODELS[op] ?? []);
+
+/** Every model Auto may plan a run on with the built-in order for matched prompts. */
 export const AUTO_MODELS: ReadonlySet<string> = new Set([...AUTO_T2I_MODELS, ...Object.values(AUTO_EDIT_MODELS).flat()]);
 
 /**
@@ -63,8 +124,9 @@ const TEXT_WORDS =
 const QUOTED = /["“”«»][^"“”«»\n]{2,80}["“”«»]/;
 
 /**
- * The setting's list (Settings → Auto image model): prompts Auto starts on Krea 2 Realism (then MiniMax H3 Image, then
- * MOSS-Image), and whose run details name the line they matched. Lettering still follows its own order. One per line: a word or phrase matches as a whole word (a space or a hyphen matches either), any other line is a regular
+ * The setting's list (Settings → Auto image model): prompts Auto starts on the order for matched prompts
+ * (DEFAULT_TRIGGER_MODELS, or the saved one), and whose run details name the line they matched. Lettering still follows
+ * its own order. One per line: a word or phrase matches as a whole word (a space or a hyphen matches either), any other line is a regular
  * expression, and a line that starts with "#" is a note; case never matters.
  */
 export const DEFAULT_AUTO_PATTERNS: readonly string[] = [
@@ -165,18 +227,22 @@ export interface AutoAsk {
 /**
  * The models Auto would plan a run on, best first, and why: a picture to work from → the studio's edit model for its
  * operation; lettering → MiniMax H3 Image, then MOSS-Image, then Krea 2 Realism; a prompt the setting's patterns match →
- * Krea 2 Realism, then MiniMax H3 Image, then MOSS-Image; anything else → MiniMax H3 Image, then Krea 2 Realism, then
- * MOSS-Image. The same for the owner, an account and a guest. The server plans the first one that is switched on, runs
- * the operation and fits the GPUs the run goes to (src/server/generations.ts autoRouted), and the next one makes the run
- * when it fails (autoNext).
+ * `trigger` in its order (the saved order; DEFAULT_TRIGGER_MODELS when not given or empty); anything else → MiniMax H3
+ * Image, then Krea 2 Realism, then MOSS-Image. The same for the owner, an account and a guest. The server plans the first
+ * one that is switched on, runs the operation and fits the GPUs the run goes to (src/server/generations.ts autoRouted),
+ * and the next one makes the run when it fails (autoNext).
  */
-export function autoCandidates(ask: AutoAsk, patterns: readonly { line: string; re: RegExp }[]): { models: string[]; why: AutoWhy; pattern?: string } {
+export function autoCandidates(
+  ask: AutoAsk,
+  patterns: readonly { line: string; re: RegExp }[],
+  trigger: readonly string[] = DEFAULT_TRIGGER_MODELS,
+): { models: string[]; why: AutoWhy; pattern?: string } {
   const op = ask.op && ask.op !== "t2i" ? ask.op : (ask.images ?? 0) > 0 ? "edit" : "t2i";
   if (op !== "t2i") return { models: [...(AUTO_EDIT_MODELS[op] ?? [])], why: "edit" };
   const words = ask.prompt ?? "";
   if (asksForText(words)) return { models: [AUTO_LEAD_MODEL, AUTO_TEXT_MODEL, AUTO_PHOTO_MODEL], why: "text" };
   const pattern = matchedPattern(words, patterns);
-  if (pattern) return { models: [AUTO_PHOTO_MODEL, AUTO_LEAD_MODEL, AUTO_TEXT_MODEL], why: "trigger", pattern };
+  if (pattern) return { models: [...new Set(trigger.length ? trigger : DEFAULT_TRIGGER_MODELS)], why: "trigger", pattern };
   return { models: [...AUTO_T2I_MODELS], why: "plain" };
 }
 

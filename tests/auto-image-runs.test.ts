@@ -50,6 +50,7 @@ beforeAll(() => setSetting("demoMode", "auto"));
 beforeEach(() => {
   setSetting("enhanceProvider", "none");
   setSetting("autoImagePatterns", "");
+  setSetting("autoTriggerModels", "");
   changeAccess([{ kind: "reset" }]);
   ideogram = [];
   failing = new Set();
@@ -293,6 +294,55 @@ describe("Ideogram 4 picked by name, when it declines", () => {
     expect(g.modelId).toBe("oss-ideogram-4");
     expect(g.declinedCards).toHaveLength(1);
     expect(rowsSince(g.id)).toBe(1);
+  });
+});
+
+describe("the saved order for prompts the patterns match", () => {
+  const ORDER = "oss-z-image-turbo,oss-qwen-image-21,oss-fibo2-dev";
+
+  it("a matched prompt starts on the saved order's first model; plain words, lettering and edits keep theirs", async () => {
+    setSetting("autoTriggerModels", ORDER);
+    const g = await run(CAT);
+    expect(g.status, g.error ?? "").toBe("succeeded");
+    expect(handed.map((h) => h.model)).toEqual(["oss-z-image-turbo"]);
+    expect(g.request.auto).toEqual({ model: "oss-z-image-turbo", why: "trigger" });
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: "a koi pond at night" }).model.id).toBe(H3);
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: 'a poster that says "OPEN"' }).model.id).toBe(H3);
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: CAT, inputs: { images: [dataUri(gradient)] } }).model.id).toBe("oss-qwen-image-21");
+    // A run planned again keeps a pick from the saved order.
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: CAT, auto: { model: "oss-fibo2-dev", why: "fallback" } }).model.id).toBe("oss-fibo2-dev");
+  });
+
+  it("a model switched off is passed over", () => {
+    setSetting("autoTriggerModels", ORDER);
+    changeAccess([{ kind: "model", id: "oss-z-image-turbo", on: false }]);
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: CAT }).model.id).toBe("oss-qwen-image-21");
+  });
+
+  it("when a model fails, the next in the saved order makes the same run, each at most once", async () => {
+    setSetting("autoTriggerModels", ORDER);
+    failing = new Set(["oss-z-image-turbo", "oss-qwen-image-21"]);
+    const g = await run(CAT);
+    expect(g.status, g.error ?? "").toBe("succeeded");
+    expect(handed.map((h) => h.model)).toEqual(["oss-z-image-turbo", "oss-qwen-image-21", "oss-fibo2-dev"]);
+    expect(g.request.auto).toEqual({ model: "oss-fibo2-dev", why: "fallback" });
+    expect(rowsSince(g.id)).toBe(1);
+
+    handed = [];
+    failing = new Set(["oss-z-image-turbo", "oss-qwen-image-21", "oss-fibo2-dev"]);
+    const f = await run(CAT);
+    expect(f.status).toBe("failed");
+    expect(handed.map((h) => h.model)).toEqual(["oss-z-image-turbo", "oss-qwen-image-21", "oss-fibo2-dev"]);
+  });
+
+  it("is checked on save, and empty is the built-in order", () => {
+    expect(getSetting("autoTriggerModels")).toBe("");
+    expect(() => validateSetting("autoTriggerModels", "oss-krea2-realism,nope", "api")).toThrow(/nope isn't a model this install has/);
+    expect(() => setSetting("autoTriggerModels", "oss-krea2-realism,oss-krea2-realism")).toThrow(/listed twice/);
+    expect(() => setSetting("autoTriggerModels", "oss-minimax-h3-image,oss-krea2-realism,oss-qwen-image-21,oss-z-image-turbo,oss-fibo2-dev,oss-moss-image")).not.toThrow();
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: CAT }).model.id).toBe(H3);
+    setSetting("autoTriggerModels", "");
+    expect(previewGeneration({ feature: "image", modelId: AUTO_IMAGE, prompt: CAT }).model.id).toBe("oss-krea2-realism");
   });
 });
 

@@ -1,7 +1,8 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { PLACE_NAME_MAX } from "@/lib/place-name";
-import { autoPatternsProblems, DEFAULT_AUTO_PATTERNS } from "@/lib/auto-image";
+import { autoPatternsProblems, autoTriggerModelsProblems, DEFAULT_AUTO_PATTERNS } from "@/lib/auto-image";
+import { getModel } from "@/lib/catalog";
 import { db } from "./db";
 
 /**
@@ -137,10 +138,16 @@ export const SETTINGS = {
   /** Tokens of context the local model gets (Ollama's num_ctx; LM Studio loads models with it). 0 = the server's own setting. */
   llmContext: { key: "llm.context", env: "FUOBE_LLM_CONTEXT", default: "16384" },
   /**
-   * Settings → Auto image model: prompts Auto starts on Krea 2 Realism (a plain prompt starts on MiniMax H3 Image), one pattern per
-   * line, whose run details name the line they matched (src/lib/auto-image.ts). Empty: the built-in list.
+   * Settings → Auto image model: prompts Auto starts on the order for matched prompts (autoTriggerModels; a plain prompt
+   * starts on MiniMax H3 Image), one pattern per line, whose run details name the line they matched
+   * (src/lib/auto-image.ts). Empty: the built-in list.
    */
   autoImagePatterns: { key: "auto.imagePatterns", default: DEFAULT_AUTO_PATTERNS.join("\n") },
+  /**
+   * Settings → Auto image model: the models for prompts the list matches, in order, as model ids separated by commas
+   * (src/lib/auto-image.ts triggerOrder). Empty: the built-in order (DEFAULT_TRIGGER_MODELS).
+   */
+  autoTriggerModels: { key: "auto.triggerModels" },
   /**
    * Settings → Failed runs: what a person reads when a run of theirs on this install's GPUs fails. "full": the plain
    * sentence, and under it the cleaned technical reason (ComfyUI's own, src/lib/comfy-reason.ts: no folders, addresses,
@@ -255,6 +262,11 @@ export function validateSetting(name: SettingName, value: string, from: "api" | 
   if (name === "autoImagePatterns" && value !== "") {
     const problems = autoPatternsProblems(value);
     if (problems.length) throw new Error(`Auto's patterns: ${problems.join("; ")}`);
+  }
+  // Auto's order for matched prompts: 1 to 10 open text-to-image models the catalog has, none twice.
+  if (name === "autoTriggerModels" && value !== "") {
+    const problems = autoTriggerModelsProblems(value, getModel);
+    if (problems.length) throw new Error(`Auto's models for matched prompts: ${problems.join("; ")}`);
   }
   if (name === "smartPlan" && value !== "" && value !== "auto" && !/^[a-z0-9-]{2,32}\|[\w.:/@+-]{1,200}$/.test(value)) {
     throw new Error("smartPlan must be auto, or a provider and model as provider|model");

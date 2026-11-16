@@ -8,6 +8,7 @@ import {
   AUTO_LARGE_MODELS,
   AUTO_MODELS,
   AUTO_T2I_MODELS,
+  AUTO_TRIGGER_MAX,
   autoCandidates,
   autoLine,
   autoModelsFor,
@@ -15,8 +16,11 @@ import {
   autoPatterns,
   autoPatternsProblems,
   autoResolution,
+  autoTriggerModelsProblems,
   DECLINED_FALLBACKS,
   DEFAULT_AUTO_PATTERNS,
+  DEFAULT_TRIGGER_MODELS,
+  triggerOrder,
   matchedPattern,
   nextDeclinedFallback,
 } from "@/lib/auto-image";
@@ -260,5 +264,60 @@ describe("the line under a run of Auto", () => {
     expect(owners).toContain("Ideogram 4 declined: what it returned");
     expect(owners).toContain("Words: “a cat in a gown”");
     expect(owners).toContain("Add a pattern");
+  });
+});
+
+describe("the order for prompts the patterns match", () => {
+  const MATCHED = "a cat in an antique-gold paillette gown";
+  const OPEN_T2I = ["oss-krea2-realism", "oss-qwen-image-21", "oss-z-image-turbo", "oss-fibo2-dev", "oss-moss-image", H3];
+
+  it("defaults to Krea 2 Realism, then MiniMax H3 Image, then MOSS-Image", () => {
+    expect(DEFAULT_TRIGGER_MODELS).toEqual(KREA_FIRST);
+    expect(pick(MATCHED)).toMatchObject({ models: KREA_FIRST, why: "trigger" });
+    expect(triggerOrder("", getModel)).toEqual(KREA_FIRST);
+    expect(triggerOrder("  ", getModel)).toEqual(KREA_FIRST);
+  });
+
+  it("a saved order replaces it for matched prompts only; plain, lettering and edits keep theirs", () => {
+    const order = triggerOrder("oss-z-image-turbo, oss-qwen-image-21,oss-fibo2-dev", getModel);
+    expect(order).toEqual(["oss-z-image-turbo", "oss-qwen-image-21", "oss-fibo2-dev"]);
+    expect(autoCandidates({ prompt: MATCHED }, defaults, order)).toMatchObject({ models: order, why: "trigger" });
+    expect(autoCandidates({ prompt: "a koi pond at night" }, defaults, order)).toMatchObject({ models: PLAIN, why: "plain" });
+    expect(autoCandidates({ prompt: 'a poster that says "OPEN"' }, defaults, order)).toMatchObject({ models: LETTERING, why: "text" });
+    expect(autoCandidates({ prompt: MATCHED, images: 1 }, defaults, order)).toMatchObject({ models: ["oss-qwen-image-21", "oss-fibo2-dev"], why: "edit" });
+    // The models Auto may plan for text to image take the saved ones in too, so a run planned again keeps its pick.
+    expect(autoModelsFor("t2i", order)).toEqual([...PLAIN, "oss-z-image-turbo", "oss-qwen-image-21", "oss-fibo2-dev"]);
+    expect(autoModelsFor("edit", order)).toEqual(["oss-qwen-image-21", "oss-fibo2-dev"]);
+  });
+
+  it("after a model fails, the next in the saved order makes the run, each at most once", () => {
+    const order = ["oss-z-image-turbo", "oss-qwen-image-21", H3];
+    expect(autoNext(order, ["oss-z-image-turbo"])).toEqual(["oss-qwen-image-21", H3]);
+    expect(autoNext(order, ["oss-z-image-turbo", "oss-qwen-image-21"])).toEqual([H3]);
+    expect(autoNext(order, order)).toEqual([]);
+  });
+
+  it("leaves out what Auto may not list when reading a saved value; none left is the built-in order", () => {
+    expect(triggerOrder("oss-z-image-turbo,gone-model,oss-z-image-turbo,oss-moss-image", getModel)).toEqual(["oss-z-image-turbo", "oss-moss-image"]);
+    expect(triggerOrder("gone-model", getModel)).toEqual(KREA_FIRST);
+  });
+
+  it("is checked on save: known open text-to-image models, none twice, 1 to 10", () => {
+    for (const id of OPEN_T2I) expect(autoTriggerModelsProblems(id, getModel), id).toEqual([]);
+    expect(autoTriggerModelsProblems(OPEN_T2I.join(","), getModel)).toEqual([]);
+    expect(autoTriggerModelsProblems("", getModel)).toEqual([]);
+    expect(autoTriggerModelsProblems(" , ", getModel)).toEqual(["List at least one model"]);
+    expect(autoTriggerModelsProblems("oss-krea2-realism,no-such-model", getModel)).toEqual(["no-such-model isn't a model this install has"]);
+    expect(autoTriggerModelsProblems("oss-krea2-realism,oss-krea2-realism", getModel)).toEqual(["oss-krea2-realism is listed twice"]);
+    expect(autoTriggerModelsProblems(AUTO_IMAGE, getModel)[0]).toMatch(/doesn't make pictures from words on the open engine/);
+    // A cloud model, and a model that doesn't make pictures from words.
+    const cloud = MODELS.find((m) => m.engine === "cloud" && m.kind === "image" && m.routes.some((r) => r.op === "t2i"))!;
+    expect(autoTriggerModelsProblems(cloud.id, getModel)[0]).toMatch(/doesn't make pictures from words/);
+    const video = MODELS.find((m) => m.engine === "open" && m.kind === "video")!;
+    expect(autoTriggerModelsProblems(video.id, getModel)[0]).toMatch(/doesn't make pictures from words/);
+    const many = MODELS.filter((m) => m.engine === "open" && m.kind === "image" && !m.hidden && m.id !== AUTO_IMAGE && m.routes.some((r) => r.op === "t2i")).map((m) => m.id);
+    expect(many.length).toBeGreaterThan(AUTO_TRIGGER_MAX);
+    expect(autoTriggerModelsProblems(many.slice(0, AUTO_TRIGGER_MAX).join(","), getModel)).toEqual([]);
+    expect(autoTriggerModelsProblems(many.slice(0, AUTO_TRIGGER_MAX + 1).join(","), getModel)).toEqual([`Keep it to ${AUTO_TRIGGER_MAX} models`]);
   });
 });

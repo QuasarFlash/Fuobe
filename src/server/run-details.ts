@@ -506,7 +506,7 @@ export function surfaceOf(feature: string, stamp: GenerationRequest): RunSurface
 export const AUTO_WHY_WORDS: Record<AutoWhy, string> = {
   edit: "It had a picture to work from, so it went to the edit model",
   text: "Its words ask for lettering, so it went to MiniMax H3 Image first",
-  trigger: "Its words match a pattern in Settings → Auto image model, so it went to Krea 2 Realism first",
+  trigger: "Its words match a pattern in Settings → Auto image model, so it went to the models set for those prompts, in order",
   plain: "A plain prompt, so it went to MiniMax H3 Image first",
   fallback: "The model before it couldn't make it, so Auto's next model made it",
   declined: "Ideogram 4 declined it, so this model made it instead",

@@ -34,8 +34,8 @@ export function MadeNote({ g, className }: { g: NoteRun; className?: string }) {
 /**
  * The owner's line on a run Ideogram 4 declined: a link to each picture it returned in place of one, with the two
  * measures that took it for the "blocked" card, so a false catch can be told from the card; the words it declined
- * (`words`, where the view doesn't show them already); and "Add a pattern", which sends such words to Krea 2 Realism
- * next time Auto picks (Settings → Auto image model).
+ * (`words`, where the view doesn't show them already); and "Add a pattern", which sends such words to the models set for
+ * the list next time Auto picks (Settings → Auto image model).
  */
 export function DeclinedCards({ cards, words, className }: { cards: NonNullable<Generation["declinedCards"]>; words?: string; className?: string }) {
   const said = words?.trim();
