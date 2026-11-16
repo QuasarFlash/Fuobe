@@ -425,7 +425,7 @@ describe("studio jobs first", () => {
     expect(p.logs.some((l) => /runs nothing and keeps its models loaded/.test(l))).toBe(true);
     expect((await until(() => ["done", "failed"].includes(task(id).state) && task(id), 60_000)).state).toBe("done");
     // It never asked for room, and never paused; a minute after the job (shortened here) it writes 0 again.
-    expect(p.logs.some((l) => /make room|Another program/.test(l))).toBe(false);
+    expect(p.logs.filter((l) => /make room|Another program/.test(l))).toEqual([]);
     await until(() => site(p)?.siteWaiting === 0, 20_000);
   });
 

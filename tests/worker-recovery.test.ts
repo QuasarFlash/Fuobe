@@ -487,8 +487,8 @@ http.createServer((q, s) => {
     await until(() => p.logs.some((l) => /stopped answering/.test(l)), 60_000);
     expect(Date.now() - t0).toBeLessThan(30_000);
     const beats = s.calls.filter((c) => c.endsWith("/beat")).length;
-    await sleep(12_000);
-    expect(s.calls.filter((c) => c.endsWith("/beat")).length).toBeGreaterThan(beats);
+    // Beats come every 10 s while idle: the next one within two of them (a slow machine runs the loop late).
+    await until(() => s.calls.filter((c) => c.endsWith("/beat")).length > beats, 20_000);
     await until(() => p.logs.filter((l) => /Starting its own ComfyUI/.test(l)).length >= 2, 30_000);
   });
 
@@ -929,12 +929,14 @@ describe("its model folders", () => {
       return false;
     }, 30_000);
     await until(() => beats.some((b) => typeof b.slept === "number" && (b.slept as number) >= 5 * 60_000));
+    const told = beats.findIndex((b) => typeof b.slept === "number");
     const done = await ended(id);
     expect(done.state).toBe("done");
     // The attempt lost to the sleep was taken back: no blame on the worker.
     expect(done.requeues).toBe(0);
     expect(done.tried_json).toBeNull();
-    // Once heard, the sleep isn't said again.
+    // Once heard, the sleep isn't said again (on a slow machine the job can end before the next beat: wait for it).
+    await until(() => beats.length > told + 1);
     const last = beats.at(-1)!;
     expect(last.slept).toBeUndefined();
   });

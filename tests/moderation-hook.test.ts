@@ -175,8 +175,9 @@ describe("the output check", () => {
     // Show: served, and the row succeeds.
     mod.output = { decision: "show" };
     db().prepare("UPDATE output_checks SET next_at = 0 WHERE generation_id = ?").run(id);
+    // A sweep already under way (the run loop's) makes this one return at once: the next one settles it.
     await checks.sweepOutputChecks();
-    expect(row(id).status).toBe("succeeded");
+    await until(() => row(id).status === "succeeded");
     expect(fileHeld(held)).toBe(false);
     expect(fileAccount(held)).toBe(a);
   });
