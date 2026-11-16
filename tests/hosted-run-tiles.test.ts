@@ -6,7 +6,7 @@ import type { Generation } from "@/lib/catalog/types";
 
 /*
  * A run's tile on this studio's GPUs (hosted runs): "In line" with its place and wait (again after any recovery, its
- * place kept), "Working" with its progress, then the result with an "AI-generated" tag, or one plain sentence when it
+ * place kept), "Working" with its progress, then the result with an "AI-generated" info tip, or one plain sentence when it
  * can't finish. Every other run's tiles render as before.
  */
 
@@ -111,8 +111,17 @@ describe("a run's tile on this studio's GPUs", () => {
     expect(failed).toContain("Couldn&#x27;t generate this one");
     expect(failed).toContain("Your ComfyUI answered HTTP 500.");
   });
-  it("the AI-generated tag", () => {
-    expect(render(createElement(AiTag))).toContain("AI-generated");
+  it("the AI-generated tag: a small info icon whose tooltip says so, all inside [data-ai-tag]", () => {
+    const html = render(createElement(AiTag));
+    // The outermost element carries data-ai-tag, so hiding [data-ai-tag] hides the icon and its tooltip.
+    expect(html).toMatch(/^<span data-ai-tag="true" class="[^"]*pointer-events-none/);
+    expect(html.match(/data-ai-tag/g)).toHaveLength(1);
+    expect(html).toMatch(/<button type="button" aria-label="AI-generated" class="[^"]*pointer-events-auto/);
+    expect(html).toContain("lucide-info");
+    // The tooltip's words sit inside the same element, shown on hover and keyboard focus.
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*peer-hover:opacity-100[^"]*peer-focus-visible:opacity-100[^"]*">AI-generated<\/span><\/span>$/);
+    expect(html).not.toContain("rounded-full bg-black/55 px-2");
+    expect(render(createElement(AiTag, { tone: "surface" }))).toContain("text-muted-foreground");
   });
 });
 

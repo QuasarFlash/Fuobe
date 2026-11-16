@@ -426,7 +426,7 @@ interface FeedApi {
   retry: (g: Generation) => void;
   runner: RunnerOptions;
   reuse?: (g: Generation) => void;
-  /** Pictures and clips carry an "AI-generated" tag (hosted runs on). */
+  /** Pictures and clips carry an "AI-generated" tip (hosted runs on). */
   aiTag?: boolean;
 }
 
@@ -494,7 +494,10 @@ const OutputTile = memo(function OutputTile({ g, index, ratio, layered, count }:
         className={cn("absolute", o.kind === "text" ? "bottom-2" : o.draftId ? "top-11" : "top-2", audio && canHover && "group-focus-within/tile:opacity-0 group-hover/tile:opacity-0 focus-within:opacity-100! has-data-[state=open]:opacity-100!")}
       />
       {g.favorite && <Heart className={cn("absolute top-2 right-2 size-4 fill-highlight text-highlight drop-shadow", audio && canHover && "group-focus-within/tile:opacity-0 group-hover/tile:opacity-0")} />}
-      {feed.aiTag && (o.kind === "image" || o.kind === "video") && <AiTag className={cn("absolute bottom-2 left-2", canHover && "transition-opacity group-focus-within/tile:opacity-0 group-hover/tile:opacity-0")} />}
+      {feed.aiTag && (o.kind === "image" || o.kind === "video") && (
+        // Above the action bar while it shows, so the tip stays in reach.
+        <AiTag className={cn("absolute bottom-2 left-2 z-10", canHover && "transition-transform group-focus-within/tile:-translate-y-10 group-hover/tile:-translate-y-10")} />
+      )}
       {canHover && hot === "bar" && (
         <TileActions
           g={g}
