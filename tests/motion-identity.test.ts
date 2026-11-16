@@ -46,12 +46,16 @@ function cases(): Case[] {
   return out;
 }
 
+/** Numbers to 10 significant digits: Node versions differ in the last bit of Math.sin, ** and the like. */
+const rounded = (v: unknown): unknown =>
+  typeof v === "number" ? (Number.isFinite(v) ? Number(v.toPrecision(10)) : v) : Array.isArray(v) ? v.map(rounded) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rounded(x)])) : v;
+
 async function hashOf(r: Recipe): Promise<string> {
   const scene = await loadScene(r.scene);
   const plan = scene.plan({ recipe: r, measure, logo: r.brand.logo ? RASTER_LOGO : null, images: { product: { w: 800, h: 1024 } }, outlines: { product: null } });
   const h = createHash("sha1");
-  for (let i = 0; i < 12; i++) h.update(stableJson(plan.evaluate((i / 11) * plan.rest)));
-  h.update(stableJson(plan.timeline.events.map((e) => [e.id, e.start, e.dur])));
+  for (let i = 0; i < 12; i++) h.update(stableJson(rounded(plan.evaluate((i / 11) * plan.rest))));
+  h.update(stableJson(rounded(plan.timeline.events.map((e) => [e.id, e.start, e.dur]))));
   return h.digest("hex").slice(0, 16);
 }
 

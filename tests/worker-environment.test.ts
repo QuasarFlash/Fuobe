@@ -260,8 +260,9 @@ describe("the worker's model files", () => {
     expect(yaml).toContain("\n  clip: clip\n"); // the twins are still there
     // Where ComfyUI reads the pack's files through this yaml is where the inventory checks them (models/<folder>/<file>).
     const d = yamlModelDirs(yaml, "/");
-    expect(d.kandinsky6_audio_vae).toEqual([path.resolve("X:/models/audio_vae")]);
-    for (const f of Object.values(index.files).filter((x) => x.listFolder)) expect(path.resolve("X:/models", f.folder)).toBe(d[f.listFolder!][0]);
+    // Resolved against the yaml's base ("/"), as on the worker: the same absolute path on Windows and Linux.
+    expect(d.kandinsky6_audio_vae).toEqual([path.resolve("/", "X:/models/audio_vae")]);
+    for (const f of Object.values(index.files).filter((x) => x.listFolder)) expect(path.resolve("/", "X:/models", f.folder)).toBe(d[f.listFolder!][0]);
     // A plain list of names (an older caller) still writes name: name.
     expect(modelPathsYaml(["X:/models"], ["kandinsky6_audio_vae"])).toContain("  kandinsky6_audio_vae: kandinsky6_audio_vae\n");
   });

@@ -30,6 +30,31 @@ const events: string[] = [];
 const win = new EventTarget();
 win.addEventListener("fuobe:guest-prompt", (e) => events.push(`guest:${(e as CustomEvent<{ action?: string }>).detail?.action}`));
 vi.stubGlobal("window", win);
+// Node before 24 has no Web Locks API (navigator.locks): a stand-in with what browsers do for the calls held-files makes
+// (exclusive locks held while the callback's promise runs, ifAvailable, query).
+if (!globalThis.navigator?.locks) {
+  const taken = new Set<string>();
+  const locks = {
+    async request(name: string, a: unknown, b?: unknown) {
+      const ifAvailable = typeof a === "object" && !!(a as { ifAvailable?: boolean } | null)?.ifAvailable;
+      const cb = (typeof a === "function" ? a : b) as (lock: { name: string; mode: string } | null) => unknown;
+      if (taken.has(name)) {
+        if (ifAvailable) return cb(null);
+        throw new Error("the stand-in doesn't queue a wait for a held lock");
+      }
+      taken.add(name);
+      try {
+        return await cb({ name, mode: "exclusive" });
+      } finally {
+        taken.delete(name);
+      }
+    },
+    async query() {
+      return { held: [...taken].map((name) => ({ name, mode: "exclusive" })), pending: [] };
+    },
+  };
+  vi.stubGlobal("navigator", Object.create(globalThis.navigator ?? null, { locks: { value: locks } }));
+}
 
 const draftLib = await import("@/lib/guest-draft");
 const held = await import("@/lib/held-files");
