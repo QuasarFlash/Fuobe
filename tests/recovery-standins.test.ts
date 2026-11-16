@@ -272,7 +272,7 @@ describe("what the harness checks", () => {
     expect(stepOf("/api/gpu/computer/tasks/abc/report", { body: JSON.stringify({ event: "comfy-down" }) })).toBe("other");
   });
 
-  it("lets a run show only In line with its place, Working and its result", async () => {
+  it("lets a run show only In line with its place, Creating and its result", async () => {
     const at = (g: Record<string, unknown>) => async () => g as never;
     const good = new RunWatch({ a: at({ status: "queued", message: POOL_WORDS.inLine, queue: { place: 2, etaSeconds: 9 } }) });
     await good.look();
@@ -281,7 +281,7 @@ describe("what the harness checks", () => {
     const cases: [Record<string, unknown>, RegExp][] = [
       [{ status: "failed", error: "Timed out after 45 minutes" }, /a state that isn't/],
       [{ status: "queued", message: "Waiting for a GPU · 2 ahead", queue: { place: 3 } }, /doesn't say In line/],
-      [{ status: "running", message: "ComfyUI restarted" }, /doesn't say Working/],
+      [{ status: "running", message: "ComfyUI restarted" }, /doesn't say Creating/],
       [{ status: "queued", message: POOL_WORDS.inLine, queue: { place: 3 } }, /place went back from 2 to 3/],
       [{ status: "succeeded", outputs: [] }, /nothing in it/],
     ];

@@ -978,7 +978,7 @@ export function Composer({ docked }: { docked: boolean }) {
     !(layoutOn && draft.layout!.items.length > 0);
   const blocker = blockerFor({
     // A model outside the studio's slice (remembered, or handed over) is known once the full catalog arrives: loading until then, not "Pick a model".
-    loading: !catalog.ready || (!model && !catalog.complete) ? "Loading models…" : presetLoading ? "Loading presets…" : null,
+    loading: !catalog.ready || (!model && !catalog.complete) || presetLoading ? "Getting ready…" : null,
     model: !!model,
     engineError,
     frames: framesOn && model ? (framesBlocker(model, draft.frames!.length) ?? (framesGap ? { message: framesGap } : null)) : null,
@@ -2177,7 +2177,7 @@ export function Composer({ docked }: { docked: boolean }) {
                 />
               ) : (
                 <Chip icon={Loader2} disabled className="[&>svg]:animate-spin">
-                  Loading models…
+                  Getting ready…
                 </Chip>
               )
             ) : (

@@ -23,7 +23,7 @@ describe("the start flag", () => {
   });
 
   it("waits while things load, runs when nothing blocks, else explains what's missing", () => {
-    expect(startStep({ settling: true, blocker: { message: "Loading models…" } })).toBe("wait");
+    expect(startStep({ settling: true, blocker: { message: "Getting ready…" } })).toBe("wait");
     expect(startStep({ settling: false, blocker: null })).toBe("run");
     // Edit with a prompt and no photo: the blocker names the slot, which the toast points at.
     const missing = firstMissingSlot(EDIT_STUDIO.slots, {});

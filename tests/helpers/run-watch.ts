@@ -1,7 +1,7 @@
 /**
  * What a person sees of a run on this install's GPUs, as the recovery tests check it: every look at the run (a refresh,
  * a session, the list, another app process) is written down, and checked against the rule that the run shows only
- * "In line" (with its place), "Working" (with its progress) and then its result. A recovery shows "In line" again with
+ * "In line" (with its place), "Creating" (with its progress) and then its result. A recovery shows "In line" again with
  * the place it had. No error, no word about the machines, no pause. A look that can't find the run (an error answer, a
  * run gone from the list) breaks the rule too, and so does the run showing to anyone but its own account.
  */
@@ -92,10 +92,10 @@ export class RunWatch {
     let best = o.place ?? Infinity;
     for (const s of this.seen) {
       const at = `${s.where}: ${JSON.stringify(s)}`;
-      if (!["queued", "running", "succeeded"].includes(s.status)) out.push(`a state that isn't In line, Working or the result (${at})`);
+      if (!["queued", "running", "succeeded"].includes(s.status)) out.push(`a state that isn't In line, Creating or the result (${at})`);
       if (s.status === "queued" && s.message !== POOL_WORDS.inLine) out.push(`a waiting run that doesn't say In line (${at})`);
       if (s.status === "queued" && s.place === null) out.push(`a waiting run with no place in line (${at})`);
-      if (s.status === "running" && !isPoolRunWords(s.message)) out.push(`a started run that doesn't say Working (${at})`);
+      if (s.status === "running" && !isPoolRunWords(s.message)) out.push(`a started run that doesn't say Creating (${at})`);
       if (s.status === "succeeded" && s.outputs < 1) out.push(`a result with nothing in it (${at})`);
       if (s.error) out.push(`an error (${at})`);
       for (const w of [s.message, s.error]) if (w && MACHINE_WORDS.test(w)) out.push(`words about the machines (${at})`);

@@ -17,7 +17,7 @@ import { workerDriver, type WorkerDriver } from "./helpers/worker-driver";
  * limits only). Each check asks the same three things of the run:
  *
  * - its output arrives exactly once (one result in the run, one file kept, one prompt where nothing went wrong);
- * - every look at it shows only "In line" with its place, "Working", then the result: a recovery shows "In line" again
+ * - every look at it shows only "In line" with its place, "Creating", then the result: a recovery shows "In line" again
  *   with its place kept, and never an error or a word about the machines. The looks are a refresh, the account's
  *   session and a second session on another device (each through the sign-in proxy, as a browser asks), its list, and
  *   with two app processes the other one too. Each look must find the run, and another account must be refused it;
@@ -351,7 +351,7 @@ async function expectFreeFailure(id: string) {
 // ---------------------------------------------------------------------------
 
 describe("an account's run reaches the workers", () => {
-  it("with no ComfyUI address, it becomes the account's task, a stand-in worker renders it, and it shows only In line, Working and the result", async () => {
+  it("with no ComfyUI address, it becomes the account's task, a stand-in worker renders it, and it shows only In line, Creating and the result", async () => {
     const w = standInWorker();
     // Every run free: the price says only "Free".
     const q = await priceCheck(IMAGE);
@@ -499,7 +499,7 @@ describe("a refresh, a second session and the list see the same run", () => {
 });
 
 describe("a run's preview picture while it works", () => {
-  it("the Working tile gets the worker's latest picture, for the run's own account only and never kept by a cache; it goes when the run ends", async () => {
+  it("the Creating tile gets the worker's latest picture, for the run's own account only and never kept by a cache; it goes when the run ends", async () => {
     const w = standInWorker();
     const { id, task } = await pressRun();
     const watch = watchOf(id);
@@ -646,7 +646,7 @@ describe("a run's preview picture while it works", () => {
     expect((await ended(id))?.status).toBe("succeeded");
   });
 
-  it("a worker's preview pictures reach the Working tile: the latest shows, and the studio keeps at most one every 2 s", async () => {
+  it("a worker's preview pictures reach the Creating tile: the latest shows, and the studio keeps at most one every 2 s", async () => {
     const w = standInWorker();
     const { id } = await pressRun();
     const watch = watchOf(id);
@@ -1473,7 +1473,7 @@ describe("the run ceiling per lane", () => {
     await workAll(d);
     expect(after).toEqual(["running", "running"]);
     expect(watch.path("session")).toEqual(["queued", "running", "queued", "running", "failed"]);
-    // Until it truly can't finish: only In line, with its place kept, and Working.
+    // Until it truly can't finish: only In line, with its place kept, and Creating.
     expect(watch.problems({ place: 1 }).filter((p) => !p.includes('"status":"failed"'))).toEqual([]);
     await expectFreeFailure(id);
   });
@@ -1501,7 +1501,7 @@ describe("the run ceiling per lane", () => {
         // The worker sent it again: 4 minutes into this attempt (11 since the first began), it is still working.
         resent = true;
         await pass(4 * MIN, [d], watch);
-        expect(getGeneration(id)).toMatchObject({ status: "running", message: expect.stringMatching(/^Working/) });
+        expect(getGeneration(id)).toMatchObject({ status: "running", message: expect.stringMatching(/^Creating/) });
       }
     });
     await workAll(d);

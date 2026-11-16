@@ -8,7 +8,7 @@ import { composeOnWorker, graphOfTask } from "./helpers/ticket-worker";
 
 /**
  * Account runs on this install's GPUs go through the workers' line: each job of an account's run is a task for the
- * workers that belongs to the account, never a request to a ComfyUI address. The account sees only "In line", "Working"
+ * workers that belongs to the account, never a request to a ComfyUI address. The account sees only "In line", "Creating"
  * and its result; an account's own session can never take or read such a task; a task back in line keeps its place and
  * shows "In line" again; and with hosted runs off nothing changes. (The line's own rules for every job, one job per
  * worker among them: tests/worker-queue.test.ts.)
@@ -451,8 +451,8 @@ describe("the line", () => {
       const g = getGeneration(id);
       return g?.status === "running" && (g.progress ?? 0) > 0 ? g : null;
     });
-    // Working, with the sampler's step.
-    expect(working?.message).toBe("Working · Step 3 of 4");
+    // Creating, with the sampler's step as a percent.
+    expect(working?.message).toBe("Creating · 75%");
     // The worker pauses at once (its owner pressed the pause): the run goes back in line.
     pool.workerBeat(
       db().prepare("SELECT * FROM relay_workers WHERE id = ?").get(w.id) as never,
@@ -519,7 +519,7 @@ describe("what an account reads about its run", () => {
     }
   });
 
-  it("its output check is part of Working, and a stopped run says Not charged only when its hold set something aside", () => {
+  it("its output check is part of Creating, and a stopped run says Not charged only when its hold set something aside", () => {
     const now = Date.now();
     const insert = (id: string, status: string, request: Record<string, unknown>, stage: string | null = null) =>
       db()
@@ -540,7 +540,7 @@ describe("what an account reads about its run", () => {
     expect("charged" in getGeneration(`charged-${now}`)!.request).toBe(false);
   });
 
-  it("while it goes, only In line or Working, whatever the technical words were", () => {
+  it("while it goes, only In line or Creating, whatever the technical words were", () => {
     const now = Date.now();
     const id = `words-${now}`;
     db()

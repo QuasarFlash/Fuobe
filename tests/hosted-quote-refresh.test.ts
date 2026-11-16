@@ -65,7 +65,7 @@ describe("the price check asks again by itself", () => {
 
   it("a run on this studio's GPUs that ends, or one started from a toast, asks it again too", () => {
     const src = (f: string) => fs.readFileSync(path.join(process.cwd(), f), "utf8");
-    // The run's tile (In line, Working) leaves once it is done: as it goes, the checks ask again.
+    // The run's tile (In line, Creating) leaves once it is done: as it goes, the checks ask again.
     const feed = src("src/components/studio/feed.tsx");
     const tile = feed.slice(feed.indexOf("export function PendingTile"), feed.indexOf("export function FailedTile"));
     expect(tile).toContain("useEffect(() => (pool ? () => refreshPriceChecks(qc) : undefined), [pool, qc]);");

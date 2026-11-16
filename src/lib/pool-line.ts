@@ -2,7 +2,7 @@
  * The words for a run's place in line on this install's GPUs (hosted runs). Before Run, the line under the toolbar says
  * when the result would be ready ("Ready in about 2 min", "Warming up · starts automatically", "Ready in seconds"); a
  * run's tile says where it is and when ("You're next · ready in about 40 s", "2 ahead of you · about 3 min"). A run shows
- * only its place, "Working", then its result: it is taken whatever the line, and never ends for a wait.
+ * only its place, "Creating", then its result: it is taken whatever the line, and never ends for a wait.
  *
  * A run can also be made and wait to enter the line (`held`): behind the account's other runs ("After your other runs"),
  * until a time ("Free runs refresh at 14:20." before Run, "Free runs refresh at 14:20 · this one starts then" on its

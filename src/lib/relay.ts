@@ -639,11 +639,11 @@ export const RELAY_WORDS = {
  */
 export const POOL_WORDS = {
   inLine: "In line",
-  working: "Working",
-  /** Working, with its model still loading (the GPU had another one loaded): a small share that grows slowly. */
-  gettingReady: "Loading the model",
+  working: "Creating",
+  /** Started, with its model still loading (the GPU had another one loaded): a small share that grows slowly. */
+  gettingReady: "Getting ready",
   /** Its sampler is done: decoding, sound, its files. */
-  finishing: "Finishing",
+  finishing: "Almost done",
   /** The owner's own run, given back to the line so that a person's run could start first (pool.ts, people first). */
   paused: "Paused for a moment · starts again automatically",
   failed: "That one didn't come out right — try again, or try a similar model.",

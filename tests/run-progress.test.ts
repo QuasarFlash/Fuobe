@@ -117,7 +117,7 @@ describe("a cold H3 run's progress", () => {
     const at = (v: number) => seen.find((s) => s.r.value === v && s.r.node === "125")!;
     expect(at(3).share).toBeGreaterThan(0.45);
     expect(at(3).share).toBeLessThan(0.6);
-    expect(at(3).words).toBe("Working · Step 3 of 6");
+    expect(at(3).words).toBe("Creating · 50%");
     for (let v = 1; v <= 6; v++) expect(at(v).share).toBeGreaterThan(at(v - 1).share + 0.1);
     // Between two steps it moves on by the time a step takes, never past the next step's share.
     const between = seen.filter((s) => s.r.value === 2 && s.r.node === undefined);
@@ -196,13 +196,20 @@ describe("following a job's reports", () => {
 });
 
 describe("its words", () => {
-  it("a person's: the stage, with the step while it samples", () => {
-    expect(poolRunWords({ stage: "loading" })).toBe("Loading the model");
-    expect(poolRunWords({ stage: "preparing" })).toBe("Working");
-    expect(poolRunWords({ stage: "sampling", step: { value: 3, max: 6 } })).toBe("Working · Step 3 of 6");
-    expect(poolRunWords({ stage: "finishing" })).toBe("Finishing");
-    for (const w of ["Loading the model", "Working", "Working · Step 3 of 6", "Finishing"]) expect(isPoolRunWords(w)).toBe(true);
-    expect(isPoolRunWords("Making your clip · step 3 of 6")).toBe(false);
+  it("a person's: plain words for the stage, with a whole percent while it samples", () => {
+    expect(poolRunWords({ stage: "loading" })).toBe("Getting ready");
+    expect(poolRunWords({ stage: "preparing" })).toBe("Creating");
+    expect(poolRunWords({ stage: "sampling", step: { value: 3, max: 6 } })).toBe("Creating · 50%");
+    expect(poolRunWords({ stage: "sampling", step: { value: 1, max: 3 } })).toBe("Creating · 33%");
+    expect(poolRunWords({ stage: "sampling", step: { value: 2, max: 3 } })).toBe("Creating · 67%");
+    // Clamped to 0–100.
+    expect(poolRunWords({ stage: "sampling", step: { value: 9, max: 6 } })).toBe("Creating · 100%");
+    expect(poolRunWords({ stage: "sampling", step: { value: -1, max: 6 } })).toBe("Creating · 0%");
+    expect(poolRunWords({ stage: "sampling", step: { value: 1, max: 0 } })).toBe("Creating · 0%");
+    expect(poolRunWords({ stage: "finishing" })).toBe("Almost done");
+    for (const w of ["Getting ready", "Creating", "Creating · 50%", "Creating · 100%", "Almost done"]) expect(isPoolRunWords(w)).toBe(true);
+    // The owner's words and the earlier ones are not a person's.
+    for (const w of ["Making your clip · step 3 of 6", "Loading the model", "Working · Step 3 of 6", "Finishing", "Creating · 50"]) expect(isPoolRunWords(w), w).toBe(false);
   });
 
   it("the owner's: the same stages, naming what it makes", () => {
@@ -238,11 +245,12 @@ describe("a person's card for a job on the workers (cardProgress)", () => {
   });
 
   it("says the minutes left after the words, and those words still count as a running job's", () => {
-    expect(withLeft("Working", 4)).toBe("Working · about 4 min left");
-    expect(withLeft("Working", undefined)).toBe("Working");
-    expect(withLeft("Working", 0)).toBe("Working");
-    expect(isPoolRunWords("Working · about 4 min left")).toBe(true);
-    expect(isPoolRunWords("Finishing · about 1 min left")).toBe(true);
-    expect(isPoolRunWords("Working · about 0 s left")).toBe(false);
+    expect(withLeft("Creating", 4)).toBe("Creating · about 4 min left");
+    expect(withLeft("Creating", undefined)).toBe("Creating");
+    expect(withLeft("Creating", 0)).toBe("Creating");
+    expect(isPoolRunWords("Creating · about 4 min left")).toBe(true);
+    expect(isPoolRunWords("Creating · 50% · about 4 min left")).toBe(true);
+    expect(isPoolRunWords("Almost done · about 1 min left")).toBe(true);
+    expect(isPoolRunWords("Creating · about 0 s left")).toBe(false);
   });
 });

@@ -155,7 +155,7 @@ describe("Frames mode in the Video studio composer", () => {
     expect(blockerFor({ ...base, frames: framesBlocker(getModel("oss-ltx25")!, 2) })?.message).toBe("LTX-2.5 takes a start frame only — pick Wan 2.2 14B to follow your frames, or turn Frames off");
     // A model that takes every frame (or the ends) falls through to the usual checks.
     expect(blockerFor({ ...base, frames: framesBlocker(getModel("kling-o3")!, 3) })?.message).toBe("Write a prompt first");
-    expect(blockerFor({ ...base, loading: "Loading models…", frames: framesBlocker(getModel("flux-3-max")!, 0) })?.message).toBe("Loading models…");
+    expect(blockerFor({ ...base, loading: "Getting ready…", frames: framesBlocker(getModel("flux-3-max")!, 0) })?.message).toBe("Getting ready…");
   });
 
   it("hides the settings the strip owns", () => {

@@ -6,7 +6,7 @@ import type { Generation } from "@/lib/catalog/types";
 
 /*
  * A run's tile on this studio's GPUs (hosted runs): "In line" with its place and wait (again after any recovery, its
- * place kept), "Working" with its progress, then the result with an "AI-generated" info tip, or one plain sentence when it
+ * place kept), "Creating" with its progress, then the result with an "AI-generated" info tip, or one plain sentence when it
  * can't finish. Every other run's tiles render as before.
  */
 
@@ -62,27 +62,27 @@ describe("a run's tile on this studio's GPUs", () => {
     const html = render(createElement(PendingTile, { g: gen({ place: "pool", status: "queued", message: POOL_WORDS.inLine, queue: { place: 3, etaSeconds: null, unknown: true } }), ratio: 1 }));
     expect(html).toContain("Warming up · starts automatically");
   });
-  it("working while its model loads: Loading the model, with no % before its try reports one", () => {
+  it("working while its model loads: Getting ready, with no % before its try reports one", () => {
     const html = render(createElement(PendingTile, { g: gen({ place: "pool", status: "running", message: POOL_WORDS.gettingReady, progress: null }), ratio: 1 }));
     expect(html).toContain('data-run-state="working"');
-    expect(html).toContain("Loading the model");
+    expect(html).toContain("Getting ready");
     expect(html).not.toContain("%");
   });
   it("in line with no place known yet: In line", () => {
     const html = render(createElement(PendingTile, { g: gen({ place: "pool", status: "queued", message: POOL_WORDS.inLine }), ratio: 1 }));
     expect(html).toContain(">In line<");
   });
-  it("working: Working, with its progress", () => {
+  it("working: Creating, with its progress", () => {
     const html = render(createElement(PendingTile, { g: gen({ place: "pool", status: "running", message: POOL_WORDS.working, progress: 0.4 }), ratio: 1 }));
     expect(html).toContain('data-run-state="working"');
-    expect(html).toContain(">Working<");
+    expect(html).toContain(">Creating<");
     expect(html).toContain("40%");
   });
-  it("working with a preview picture: the picture shows under Working; in line, none", () => {
+  it("working with a preview picture: the picture shows under Creating; in line, none", () => {
     const src = "/api/generations/g1/preview?at=123";
     const working = render(createElement(PendingTile, { g: gen({ place: "pool", status: "running", message: POOL_WORDS.working, progress: 0.4, preview: src }), ratio: 1 }));
     expect(working).toContain(`src="${src}"`);
-    expect(working).toContain(">Working<");
+    expect(working).toContain(">Creating<");
     const inLine = render(createElement(PendingTile, { g: gen({ place: "pool", status: "queued", message: POOL_WORDS.inLine, preview: src }), ratio: 1 }));
     expect(inLine).not.toContain("<img");
     // The owner's own job on the workers shows its picture too.

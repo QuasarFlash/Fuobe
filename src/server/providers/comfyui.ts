@@ -1906,7 +1906,7 @@ async function pollComputer(principal: Principal, meta: Record<string, unknown>,
   // An account's run says only where it is: in line, or working on it (the owner's own runs keep the workers' words).
   if (!tenantAccount()) return { state: res.state, progress: res.progress, message: res.message, ...clocks };
   if (t.state === "waiting") return { state: "queued", message: POOL_WORDS.inLine, ...clocks };
-  // Working: its stage, with the sampler's step ("Working · Step 3 of 6"), as the server reads it.
+  // Running: its stage, with the sampler's step as a percent ("Creating · 50%"), as the server reads it.
   const view = t.state === "running" ? taskView(t, meta) : null;
   const words = res.state !== "running" ? POOL_WORDS.working : t.state === "collecting" ? POOL_WORDS.finishing : view ? withLeft(poolRunWords(view), view.stage === "loading" ? undefined : taskCard(t, view).leftMin) : POOL_WORDS.working;
   return { state: "running", progress: res.progress, message: words, ...clocks };

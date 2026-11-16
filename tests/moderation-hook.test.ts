@@ -156,7 +156,7 @@ describe("the output check", () => {
     const id = await started();
     await until(() => row(id).stage === "checking");
     const g = getGeneration(id)!;
-    // A run on this install's GPUs: the check is part of "Working", with no word of its own.
+    // A run on this install's GPUs: the check is part of "Creating", with no word of its own.
     expect(g.place).toBe("pool");
     expect(g.stage).toBeUndefined();
     expect(g.message).toBe(POOL_WORDS.working);

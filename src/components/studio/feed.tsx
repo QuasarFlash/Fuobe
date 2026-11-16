@@ -143,7 +143,7 @@ export function PendingTile({ g, ratio }: { g: Generation; ratio: number }) {
   const local = useLocalJob(g.id, now);
   useLiveRun(g.id);
   // On this studio's GPUs (hosted runs) a run shows only where it is: "In line" with its place and wait (again after any
-  // recovery, its place kept, with no progress from an earlier attempt), then "Working" with its progress.
+  // recovery, its place kept, with no progress from an earlier attempt), then "Creating" with its progress.
   const pool = g.place === "pool";
   const inLine = pool && g.status === "queued";
   // Its tile leaves once it is done (its result, or one plain sentence): the price check before the next Run asks again,

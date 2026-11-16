@@ -303,7 +303,7 @@ export function toGeneration(r: Row): Generation {
     ...(stored.charge && r.status === "succeeded" && { charge: stored.charge }),
     // (Only when its hold set an amount aside: a free run's hold has nothing to give back, so nothing is said.)
     ...(charged && (r.status === "failed" || r.status === "canceled") && { notCharged: true as const }),
-    // On this install's GPUs the output check is part of "Working": no word of its own.
+    // On this install's GPUs the output check is part of "Creating": no word of its own.
     ...(checking && !pool && { stage: "checking" as const }),
     // Waiting in line on this install's GPUs: its place and the wait, about.
     ...(stored.place === "pool" && (r.status === "queued" || r.status === "running") && !checking && !again && poolQueue(r.id)),
@@ -379,7 +379,7 @@ export function shownError(id: string, raw: string | null): string | null {
 
 /**
  * A pool row's words while it goes: in line, or working on it (`ready`: still getting ready, its model loading), with
- * its stage and the sampler's step when its poll said them ("Working · Step 3 of 6", "Finishing").
+ * its stage and the sampler's step when its poll said them ("Creating · 50%", "Almost done").
  */
 function poolMessage(r: Pick<Row, "status" | "message">, ready = false): string | null {
   if (r.status === "queued") return POOL_WORDS.inLine;

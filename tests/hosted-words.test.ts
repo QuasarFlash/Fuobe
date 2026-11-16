@@ -206,7 +206,7 @@ describe("the pages a visitor reads while hosted runs are on", () => {
     }
   });
 
-  it("a tile and a Library card: In line with its place, Working, then one sentence", () => {
+  it("a tile and a Library card: In line with its place, Creating, then one sentence", () => {
     const pages = [
       render(createElement(PendingTile, { g: gen({ status: "queued", message: POOL_WORDS.inLine, queue: { place: 3, etaSeconds: 130 } }), ratio: 1 })),
       render(createElement(PendingTile, { g: gen({ status: "running", message: POOL_WORDS.working, progress: 0.4 }), ratio: 1 })),
@@ -216,12 +216,12 @@ describe("the pages a visitor reads while hosted runs are on", () => {
       render(createElement(StatusCover, { g: gen({ status: "failed", error: POOL_WORDS.failed }) })),
     ].map(textOf);
     expect(pages[3]).toContain("2 ahead of you · about 2 min");
-    expect(pages[4]).toContain("Working");
+    expect(pages[4]).toContain("Creating");
     expect(pages[5]).toContain("That one didn't come out right — try again, or try a similar model.");
     expect(pages[5]).not.toContain("Couldn't generate this one");
     expect(listStatus({ status: "failed", place: "pool" })).toBe("Didn't come out right");
     expect(listStatus({ status: "queued", place: "pool" })).toBe("In line");
-    expect(listStatus({ status: "running", place: "pool" })).toBe("Working");
+    expect(listStatus({ status: "running", place: "pool" })).toBe("Creating");
     for (const t of pages) expect(t).not.toMatch(FORBIDDEN);
   });
 

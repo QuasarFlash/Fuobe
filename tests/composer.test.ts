@@ -150,7 +150,7 @@ describe("blockers", () => {
   it("orders blockers from most to least actionable", () => {
     const slot: InputSlot = { key: "image", label: "Target photo", accept: "image", required: true };
     const base = { model: true, uploading: false, promptMissing: false };
-    expect(blockerFor({ ...base, loading: "Loading models…", model: false })).toEqual({ message: "Loading models…", quiet: true });
+    expect(blockerFor({ ...base, loading: "Getting ready…", model: false })).toEqual({ message: "Getting ready…", quiet: true });
     expect(blockerFor({ ...base, model: false })).toEqual({ message: "Pick a model" });
     expect(blockerFor({ ...base, missing: slot, uploading: true, planError: "Add an image to edit", promptMissing: true })).toEqual({ message: "Add a target photo", slot: "image" });
     expect(blockerFor({ ...base, uploading: true, planError: "Add an image to edit" })).toEqual({ message: "Uploading…", quiet: true });
@@ -182,7 +182,7 @@ describe("blockers", () => {
     expect(blockerLine(blockerFor({ ...base, engineError: "Face Swap has no cloud version yet" }), true)).toBe("always");
     // Never for what passes by itself or is plain to see: loading, uploading, the empty prompt box.
     const plannerPrompt = blockerFor({ ...base, planError: "Write a prompt first", promptMissing: true });
-    for (const quiet of [blockerFor({ ...base, loading: "Loading models…" }), blockerFor({ ...base, uploading: true }), blockerFor({ ...base, promptMissing: true }), plannerPrompt]) {
+    for (const quiet of [blockerFor({ ...base, loading: "Getting ready…" }), blockerFor({ ...base, uploading: true }), blockerFor({ ...base, promptMissing: true }), plannerPrompt]) {
       expect(blockerLine(quiet, true)).toBeNull();
     }
     expect(blockerLine(null, true)).toBeNull();

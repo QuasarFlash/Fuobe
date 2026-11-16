@@ -279,24 +279,34 @@ export const withLeft = (words: string, leftMin: number | undefined): string => 
 /** "Step 3 of 6". */
 export const stepWords = (step: { value: number; max: number }) => `Step ${Math.min(step.value, step.max)} of ${step.max}`;
 
-/** A person's words for a running job on this install's GPUs: "Loading the model", "Working · Step 3 of 6", "Finishing". */
+/** "50%": the sampler's step as a whole percent of its steps (0–100). */
+export const stepPercent = (step: { value: number; max: number }): string =>
+  `${step.max > 0 ? Math.min(100, Math.max(0, Math.round((step.value / step.max) * 100))) : 0}%`;
+
+/** A person's words for a running job on this install's GPUs: "Getting ready", "Creating · 50%", "Almost done". */
 export function poolRunWords(v: Pick<ProgressView, "stage" | "step">): string {
   if (v.stage === "loading") return POOL_WORDS.gettingReady;
   if (v.stage === "finishing") return POOL_WORDS.finishing;
-  return v.step ? `${POOL_WORDS.working} · ${stepWords(v.step)}` : POOL_WORDS.working;
+  return v.step ? `${POOL_WORDS.working} · ${stepPercent(v.step)}` : POOL_WORDS.working;
 }
+
+/** "Creating · 50%": POOL_WORDS.working with a percent. */
+const POOL_PERCENT = new RegExp(`^${POOL_WORDS.working} · \\d{1,3}%$`);
 
 /** Is this one of poolRunWords' (the words a person's running job may show)? */
 export const isPoolRunWords = (m: string | null | undefined): m is string => {
   if (!m) return false;
   // Each may say about how long is left (withLeft).
   const words = m.replace(/ · about \d+ min left$/, "");
-  return words === POOL_WORDS.working || words === POOL_WORDS.gettingReady || words === POOL_WORDS.finishing || /^Working · Step \d+ of \d+$/.test(words);
+  return words === POOL_WORDS.working || words === POOL_WORDS.gettingReady || words === POOL_WORDS.finishing || POOL_PERCENT.test(words);
 };
+
+/** The owner's words while a run's model loads. */
+export const OWNER_LOADING_WORDS = "Loading the model";
 
 /** The owner's words for a running job: its stage, and the sampler's step ("Making your clip · step 3 of 6"). */
 export function runWords(kind: MadeKind, v: Pick<ProgressView, "stage" | "step">): string {
-  if (v.stage === "loading") return POOL_WORDS.gettingReady;
+  if (v.stage === "loading") return OWNER_LOADING_WORDS;
   if (v.stage === "finishing") return `Finishing your ${madeNoun(kind)}`;
   return makingWords(kind, v.step?.value, v.step?.max);
 }

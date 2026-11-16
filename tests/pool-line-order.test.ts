@@ -598,12 +598,12 @@ describe("the run ceiling", () => {
     await tick();
     const g = getGeneration(id)!;
     expect(g.status).toBe("running");
-    // Taken afresh by a worker whose beats name no model loaded: Working, getting ready (no progress of the attempt before).
+    // Taken afresh by a worker whose beats name no model loaded: getting ready (no progress of the attempt before).
     expect(g.message).toBe(POOL_WORDS.gettingReady);
     expect(g.progress).toBeNull();
   });
 
-  it("a worker with another model loaded: Loading the model until the first step reports; with its model loaded, Working at once", async () => {
+  it("a worker with another model loaded: Getting ready until the first step reports; with its model loaded, Creating at once", async () => {
     const w = standInWorker();
     const { id, t } = await accountRun("getting ready");
     const lane = rowOf(t.id).lane!;
@@ -618,8 +618,8 @@ describe("the run ceiling", () => {
     // Its first step: the model is loaded, and its words say the step.
     tasks.report(rowOf(t.id), { event: "running", value: 1, max: 4 }, () => ({ error: "unused" }));
     await tick();
-    expect(getGeneration(id)?.message).toBe("Working · Step 1 of 4");
-    // Given back, and taken by a worker that has its model loaded: Working, with no getting ready.
+    expect(getGeneration(id)?.message).toBe("Creating · 25%");
+    // Given back, and taken by a worker that has its model loaded: Creating, with no getting ready.
     tasks.report(rowOf(t.id), { event: "give-back", why: "stalled" }, () => ({ error: "unused" }));
     beatWarm(lane);
     expect(claimAs(w)?.id).toBe(t.id);
@@ -660,7 +660,7 @@ describe("the run ceiling", () => {
     for (let v = 1; v <= 6; v++) {
       // Its worker names the node for the owner; the person reads none of it.
       const g = await look({ nodesDone: before, node: sampler, value: v, max: 6, nodeClass: "KSampler", nodeTitle: "Main sampler" });
-      expect(g.message).toBe(`Working · Step ${v} of 6`);
+      expect(g.message).toBe(`Creating · ${Math.round((v / 6) * 100)}%`);
       expect(JSON.stringify(g)).not.toMatch(/KSampler|Main sampler/);
       at.push(g.progress!);
     }

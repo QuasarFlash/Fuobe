@@ -19,7 +19,7 @@ export const longWaitWords = (): string => copyLine("queueLong", {}, "Your run i
  * What a run on its way says on its tile or cover: its words (never empty: a blank or missing message reads "Queued" or
  * "Generating…"), and, for a run waiting for the workers whose words don't say it already, its place in their line
  * ("You're next", "2 ahead of you · about 2 min"). `local`: the words of its job on the ComfyUI on this computer, when
- * it runs there. On this studio's GPUs (hosted runs) only its place in line, then "Working"; after a long wait in line,
+ * it runs there. On this studio's GPUs (hosted runs) only its place in line, then "Creating"; after a long wait in line,
  * that it is saved and starts by itself, with its place under it.
  */
 export function pendingWords(g: Pick<Generation, "status" | "message" | "place" | "queue"> & { createdAt?: number }, local?: string | null, now = Date.now()): { label: string; place: string | null } {
