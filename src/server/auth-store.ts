@@ -1163,7 +1163,12 @@ export function authStoreMode(): AuthStoreMode {
 function beforeMove(): AuthStoreMode {
   const key = statKey();
   if (key === null) {
-    if (hasRows()) return failClosed("failed", "The database holds sign-in rows without a record of where they came from.");
+    if (hasRows()) {
+      // Another server's first write (its marker and its rows, in one transaction) can land between the two reads.
+      const set = marker();
+      if (set) return set.state === "bridge" ? bridgeTick(set) : afterMove(set);
+      return failClosed("failed", "The database holds sign-in rows without a record of where they came from.");
+    }
     return "fresh";
   }
   if (s.bad?.key === key && (s.bad.mode === "unreadable" || s.bad.data)) return s.bad.mode;

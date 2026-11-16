@@ -951,8 +951,8 @@ describe("a crash, or another server, while moving in", () => {
     const done = await Promise.all(runs);
     for (const d of done) expect(d.code, d.out).toBe(0);
     const results = done.map((d) => result(d.out)?.result);
-    expect(results.filter((r) => r === "ok")).toHaveLength(1);
-    expect(results.filter((r) => r === "409")).toHaveLength(3);
+    // One in, three told the email is taken (sorted: a failure shows what the odd one said).
+    expect(results.map(String).sort()).toEqual(["409", "409", "409", "ok"]);
     const srv = await server(dir);
     expect(srv.auth.listAccounts().map((a) => a.email)).toEqual(["same.person@example.com"]);
   }, 60_000);
