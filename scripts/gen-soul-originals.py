@@ -283,7 +283,7 @@ export const SOUL_CATEGORIES: Record<"v1" | "v2", string[]> = {ts(categories)};
 /** The 139 looks (106 Soul v1, 33 Soul 2.0), each a Fuobe Soul run: words, LoRAs, a grade, an overlay. */
 export const SOUL_ORIGINALS: SoulLook[] = {ts(looks)};
 """
-OUT.write_text(out, encoding="utf-8")
+OUT.write_text(out, encoding="utf-8", newline="\n")
 
 
 def hue(look_id):
@@ -323,5 +323,5 @@ export const SOUL_LOOK_CATEGORIES: Record<"v1" | "v2", string[]> = {ts(categorie
  */
 export const SOUL_LEGACY_IDS: Record<string, string> = {ts(legacy)};
 """
-CARDS_OUT.write_text(cards_out, encoding="utf-8")
+CARDS_OUT.write_text(cards_out, encoding="utf-8", newline="\n")
 print(f"wrote {len(looks)} Soul looks ({sum(1 for l in looks if l['family'] == 'v1')} v1, {sum(1 for l in looks if l['family'] == 'v2')} v2) to {OUT.relative_to(ROOT)}")

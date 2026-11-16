@@ -177,5 +177,5 @@ ts = (
     "/** fal's LoRA trainers (a zip of 001.jpg + 001.txt pairs, or clips for video), with their fields, prices and licences. */\n"
     f"export const HOSTED_TRAINERS: HostedTrainer[] = {json.dumps(trainers, indent=2, ensure_ascii=False)};\n"
 )
-OUT.write_text(ts, encoding="utf-8")
+OUT.write_text(ts, encoding="utf-8", newline="\n")
 print(f"wrote {OUT.relative_to(ROOT)}: {len(trainers)} trainers ({len(USED)} used by Soul ID)")

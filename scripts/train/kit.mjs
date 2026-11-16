@@ -20,6 +20,7 @@ import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import zlib from "node:zlib";
 
 import { resolve } from "../lib/ts-paths.mjs";
 
@@ -54,6 +55,48 @@ const loadLog = (id) => {
   return fs.existsSync(p) ? readJson(p) : { lora: id, version: 1, items: [] };
 };
 const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+/** A stored zip of files in `dir`, by their names there (as `python3 -m zipfile -c` makes it, without needing Python). */
+function zipFiles(file, dir, names) {
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const n of names) {
+    const name = Buffer.from(n, "utf8");
+    const data = fs.readFileSync(path.join(dir, n));
+    const crc = zlib.crc32(data) >>> 0;
+    const head = Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50, 0);
+    head.writeUInt16LE(20, 4);
+    head.writeUInt16LE(0x0800, 6);
+    head.writeUInt16LE(0x21, 12); // 1980-01-01
+    head.writeUInt32LE(crc, 14);
+    head.writeUInt32LE(data.length, 18);
+    head.writeUInt32LE(data.length, 22);
+    head.writeUInt16LE(name.length, 26);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(0x0800, 8);
+    entry.writeUInt16LE(0x21, 14);
+    entry.writeUInt32LE(crc, 16);
+    entry.writeUInt32LE(data.length, 20);
+    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(name.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    parts.push(head, name, data);
+    central.push(entry, name);
+    offset += 30 + name.length + data.length;
+  }
+  const dirBytes = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(names.length, 8);
+  end.writeUInt16LE(names.length, 10);
+  end.writeUInt32LE(dirBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  fs.writeFileSync(file, Buffer.concat([...parts, dirBytes, end]));
+}
 function fail(msg) {
   console.error(msg);
   process.exit(1);
@@ -124,7 +167,7 @@ if (cmd === "list") {
   // The hosted trainer gets exactly the checked files: the logged media and their captions, zipped here.
   const zipFile = path.join(out, `${id}.dataset.zip`);
   fs.rmSync(zipFile, { force: true });
-  execFileSync("python3", ["-I", "-m", "zipfile", "-c", zipFile, ...kit.datasetZipNames(loadLog(id))], { cwd: path.resolve(dataset), stdio: "pipe" });
+  zipFiles(zipFile, path.resolve(dataset), kit.datasetZipNames(loadLog(id)));
   const zipSha = sha256(zipFile);
   const zip = opt("--zip-url");
   if (zip) {
