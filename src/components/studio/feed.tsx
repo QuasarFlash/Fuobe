@@ -49,6 +49,7 @@ import { shownSettings } from "@/lib/catalog/made";
 import { NextSteps } from "@/components/nav/next-steps";
 import { reservedRowHeight, useArrival, useEnter, useFollowRow, useLiveRun, useMakingCard } from "./feed-motion";
 import { AiTag, useAiTag } from "./ai-tag";
+import { RunWords } from "@/components/run-words";
 
 export { MediaThumb } from "./result-media";
 export { downloadName } from "@/lib/library";
@@ -201,7 +202,9 @@ export function PendingTile({ g, ratio }: { g: Generation; ratio: number }) {
           {/* Always a sign it is on its way (a ring: its progress, or turning), with the run's own words beside it. */}
           <p title={label} className="flex items-start gap-2 text-[13px] leading-snug font-medium">
             <RunRing fraction={ring} stage={st.stage} />
-            <span className="line-clamp-2">{label}</span>
+            <span className="line-clamp-2">
+              <RunWords g={g} words={label} />
+            </span>
           </p>
           {place && (
             <p title={place} className="line-clamp-2 pl-6 text-[11px] text-muted-foreground">

@@ -20,6 +20,7 @@
  * Pure: the server and the tests share it.
  */
 
+import { JOB_PHRASES } from "./job-phrases";
 import { madeNoun, makingWords, POOL_WORDS, type MadeKind } from "./relay";
 
 /** Where each stage ends on the bar. */
@@ -298,7 +299,9 @@ export const isPoolRunWords = (m: string | null | undefined): m is string => {
   if (!m) return false;
   // Each may say about how long is left (withLeft).
   const words = m.replace(/ · about \d+ min left$/, "");
-  return words === POOL_WORDS.working || words === POOL_WORDS.gettingReady || words === POOL_WORDS.finishing || POOL_PERCENT.test(words);
+  if (words === POOL_WORDS.working || words === POOL_WORDS.gettingReady || words === POOL_WORDS.finishing || POOL_PERCENT.test(words)) return true;
+  // A job's phrase in place of "Creating" (src/lib/job-phrases.ts), with its percent or without.
+  return JOB_PHRASES.has(words.replace(/ · \d{1,3}%$/, ""));
 };
 
 /** Has a person's run on this install's GPUs started, as these words say ("Creating", a percent, "Almost done")? */

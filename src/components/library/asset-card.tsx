@@ -24,6 +24,7 @@ import { DRAG_TYPE } from "./folders";
 import { ReviewBadge } from "./review";
 import { autoLine } from "@/lib/auto-image";
 import type { Layout } from "./view-options";
+import { RunWords } from "@/components/run-words";
 
 /** Stable callbacks from the Library (refs inside), so cards re-render only when their own data changes. */
 export interface CardApi {
@@ -83,7 +84,9 @@ export function StatusCover({ g, small, actionable }: { g: Generation; small?: b
           <div className="absolute inset-x-0 bottom-0 space-y-1 bg-gradient-to-t from-background/85 via-background/45 to-transparent p-3 pt-10">
             <p className="flex items-center gap-2 text-[13px] font-medium">
               <RunRing fraction={st.stage === "creating" ? st.fraction : null} stage={st.stage} />
-              <span className="truncate">{label}</span>
+              <span className="truncate">
+                <RunWords g={g} words={label} />
+              </span>
             </p>
             {place && <p className="truncate text-[11px] text-muted-foreground">{place}</p>}
             <p className="text-[11px] text-muted-foreground tabular-nums">
@@ -352,7 +355,12 @@ export const AssetCard = memo(function AssetCard({
             {stack ? `${stack.label} · ` : `${g.modelName ?? g.modelId} · ${OPERATION_LABELS[g.op]} · `}
             {trashed ? `${trashDaysLeft(g.deletedAt!)} days left in Trash` : timeAgo(g.createdAt)}
             {/* "Rendering", as the Status filter calls it: "In progress" is a review status. */}
-            {!stack && g.status !== "succeeded" && ` · ${listStatus(g)}`}
+            {!stack && g.status !== "succeeded" && (
+              <>
+                {" · "}
+                <RunWords g={g} words={listStatus(g)} />
+              </>
+            )}
           </p>
           {/* What made a run of Auto ("Auto · made with Krea 2 Realism"), and what changed while it ran ("Made with Krea 2 Realism · Ideogram 4 declined this one" on Ideogram 4 picked by name). */}
           {!stack && autoLine(g) && <p className="truncate text-[12px] text-muted-foreground">{autoLine(g)}</p>}

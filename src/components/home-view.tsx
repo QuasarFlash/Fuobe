@@ -25,6 +25,7 @@ import { placeholdersOn } from "@/lib/demo-mode";
 import { userTitle } from "@/lib/library";
 import { NEW_CREATION_PARAM } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { RunWords } from "@/components/run-words";
 
 // The viewer is only needed once a recent result is opened.
 const Viewer = lazy(() => import("@/components/studio/viewer").then((m) => ({ default: m.Viewer })));
@@ -121,7 +122,7 @@ function RecentWaiting({ g, title, failed }: { g: Generation; title: string; fai
       {!failed && <RunAura />}
       <span className="relative flex min-w-0 items-start gap-1.5 text-[12px] leading-snug font-medium">
         {failed ? <CircleAlert className="mt-px size-4 shrink-0 text-muted-foreground" aria-hidden /> : <RunRing fraction={st?.stage === "in-line" ? null : (st?.fraction ?? null)} stage={st?.stage ?? "creating"} />}
-        <span className="line-clamp-2">{words}</span>
+        <span className="line-clamp-2">{failed ? words : <RunWords g={g} words={words} />}</span>
       </span>
       <span className="relative mt-0.5 line-clamp-2 pl-[22px] text-[11px] leading-snug text-muted-foreground">{what}</span>
       {!failed && place && <span className="relative line-clamp-1 pl-[22px] text-[11px] text-muted-foreground">{place}</span>}
