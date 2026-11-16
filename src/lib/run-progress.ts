@@ -301,6 +301,28 @@ export const isPoolRunWords = (m: string | null | undefined): m is string => {
   return words === POOL_WORDS.working || words === POOL_WORDS.gettingReady || words === POOL_WORDS.finishing || POOL_PERCENT.test(words);
 };
 
+/** Has a person's run on this install's GPUs started, as these words say ("Creating", a percent, "Almost done")? */
+export const startedWords = (m: string | null | undefined): boolean => isPoolRunWords(m) && !m.startsWith(POOL_WORDS.gettingReady);
+
+/**
+ * A person's run on this install's GPUs once it has started (`peak`: the highest share it was shown since; null: not
+ * started yet), as it is shown: it never goes back. Taken up again after its GPU let it go (in line, getting ready, or
+ * running below the peak), it shows "Creating" with no percent (the time left may stay) and the peak's share (none at
+ * 0), until the new attempt passes the peak. Null: shown as it is.
+ */
+export function heldRun(
+  r: { status: string; message: string | null; progress: number | null },
+  peak: number | null | undefined,
+  ready: boolean,
+): { status: "running"; message: string; progress: number | null } | null {
+  if (peak === null || peak === undefined || (r.status !== "queued" && r.status !== "running")) return null;
+  const running = r.status === "running" && !ready && startedWords(r.message);
+  // Running at or past the peak, or finishing with no share to show (a count of nodes is none): as it is.
+  if (running && (r.progress === null ? r.message!.startsWith(POOL_WORDS.finishing) : r.progress >= peak - 1e-9)) return null;
+  const left = running ? (/ · about \d+ min left$/.exec(r.message ?? "")?.[0] ?? "") : "";
+  return { status: "running", message: `${POOL_WORDS.working}${left}`, progress: peak > 0 ? peak : null };
+}
+
 /** The owner's words while a run's model loads. */
 export const OWNER_LOADING_WORDS = "Loading the model";
 

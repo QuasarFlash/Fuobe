@@ -155,7 +155,7 @@ import { accountSend } from "./account-send";
 import { stamped, stampOf, withoutStamp, withRunStamp, type RunStamp } from "./run-stamp";
 import { anyHeld, dropGone, dropHold, HELD, NOT_HELD } from "./pool-holds";
 import { FILE_TROUBLE_WORDS, POOL_WORDS, RELAY_WORDS } from "@/lib/relay";
-import { isPoolRunWords } from "@/lib/run-progress";
+import { heldRun, isPoolRunWords, startedWords } from "@/lib/run-progress";
 import { heldLine, placeInLine, poolOnWorkers, poolRunsProvider, poolWaitMs, requestFileKinds, runOnPool, type FileKind } from "./hosted";
 import { hostedRunsOn } from "./hosted-switch";
 import { claimSiteFallback, movedFields } from "./site-fallback";
@@ -214,6 +214,13 @@ interface Row {
    * shows failure details to people (settings.ts runFailureDetail).
    */
   detail?: string | null;
+  /** On this install's GPUs: the highest share of its progress its person was shown once it started (NULL: not yet). */
+  shown_peak?: number | null;
+}
+
+/** Keep the highest share a person's run on this install's GPUs was shown once it started (Row.shown_peak). */
+export function notePeak(id: string, share: number): void {
+  db().prepare("UPDATE generations SET shown_peak = MAX(COALESCE(shown_peak, 0), ?) WHERE id = ?").run(Math.max(0, Math.min(1, share)), id);
 }
 
 /** Trash and folder columns, joined onto every library read. */
@@ -254,6 +261,8 @@ export function toGeneration(r: Row): Generation {
   // makes it (never In line: nobody pressed Run again). One that waits for the account's own GPU to come back shows that.
   const meta = r.external_meta_json?.includes('"declined"') ? readMeta(r.external_meta_json) : undefined;
   const again = (r.status === "queued" || r.status === "running") && !(r.status === "queued" && !r.external_id && meta?.heal) ? declinedWords(meta ?? {}) : undefined;
+  // Once it started, a run on this install's GPUs never shows In line, Getting ready or a lower share again (heldRun).
+  const held = pool && !checking && !again ? heldRun(r, r.shown_peak, ready) : null;
   return {
     id: r.id,
     batchId: r.batch_id,
@@ -264,10 +273,10 @@ export function toGeneration(r: Row): Generation {
     provider: r.provider,
     op: r.op,
     kind: r.kind,
-    status: again ? "running" : r.status,
-    // In line on this install's GPUs (again, after an attempt): no progress.
-    progress: pool && r.status === "queued" ? null : r.progress,
-    message: again ?? (pool ? poolMessage(r, ready) : r.message),
+    status: held ? held.status : again ? "running" : r.status,
+    // In line on this install's GPUs (before it started): no progress.
+    progress: held ? held.progress : pool && r.status === "queued" ? null : r.progress,
+    message: again ?? (held ? held.message : pool ? poolMessage(r, ready) : r.message),
     prompt: r.prompt,
     request,
     // Held for the moderation service's check: nothing of it is shown until it passes.
@@ -307,7 +316,7 @@ export function toGeneration(r: Row): Generation {
     // On this install's GPUs the output check is part of "Creating": no word of its own.
     ...(checking && !pool && { stage: "checking" as const }),
     // Waiting in line on this install's GPUs: its place and the wait, about.
-    ...(stored.place === "pool" && (r.status === "queued" || r.status === "running") && !checking && !again && poolQueue(r.id)),
+    ...(stored.place === "pool" && (r.status === "queued" || r.status === "running") && !checking && !again && !held && poolQueue(r.id)),
     // The owner's own job on the workers, waiting: its place in their line (in the list as after a refresh).
     ...(stored.place !== "pool" && r.status === "queued" && r.provider === "comfyui" && !again && workerQueue(r.id)),
     // Working on this install's GPUs: the address of its latest preview picture, while there is one. None for a run
@@ -4660,7 +4669,11 @@ async function pollOne(r: Row): Promise<void> {
     // install's GPUs each poll of a running try says its share; one that says none (its files still going to the GPU, a
     // new try not started yet) shows none, never the share of the try before.
     // (An Ideogram 4 run made again after it declined says so while it works.)
-    updateLive(r.id, { status: res.state, progress: ownClocks ? (res.state === "queued" ? null : (res.progress ?? null)) : (res.progress ?? r.progress), message: declinedWords(ctx.meta) ?? res.message ?? null });
+    const progress = ownClocks ? (res.state === "queued" ? null : (res.progress ?? null)) : (res.progress ?? r.progress);
+    const wrote = updateLive(r.id, { status: res.state, progress, message: declinedWords(ctx.meta) ?? res.message ?? null });
+    // A person's run on this install's GPUs, shown started ("Creating", a share): the highest share shown is kept with the
+    // run, so an attempt after its GPU let it go never shows less, even after a reload (toGeneration's heldRun).
+    if (wrote && onPool && res.state === "running" && startedWords(res.message) && !gettingReady(r.id)) notePeak(r.id, progress ?? 0);
     return;
   }
   if (res.state === "failed") {

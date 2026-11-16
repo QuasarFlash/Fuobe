@@ -1342,6 +1342,10 @@ function open(): Database.Database {
   if (!(db.prepare("PRAGMA table_info(account_canvases)").all() as { name: string }[]).some((c) => c.name === "summary_json")) {
     addColumn(db, "ALTER TABLE account_canvases ADD COLUMN summary_json TEXT");
   }
+  // The highest share a person's run on this install's GPUs was shown once it started (generations.ts notePeak).
+  if (!(db.prepare("PRAGMA table_info(generations)").all() as { name: string }[]).some((c) => c.name === "shown_peak")) {
+    addColumn(db, "ALTER TABLE generations ADD COLUMN shown_peak REAL");
+  }
   // A billing hold's rows are found through this index (only rows that have one are in it).
   try {
     db.exec("CREATE INDEX IF NOT EXISTS generations_hold ON generations(json_extract(request_json, '$.hold')) WHERE json_extract(request_json, '$.hold') IS NOT NULL");

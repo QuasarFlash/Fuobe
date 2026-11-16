@@ -598,9 +598,11 @@ describe("the run ceiling", () => {
     await tick();
     const g = getGeneration(id)!;
     expect(g.status).toBe("running");
-    // Taken afresh by a worker whose beats name no model loaded: getting ready (no progress of the attempt before).
-    expect(g.message).toBe(POOL_WORDS.gettingReady);
-    expect(g.progress).toBeNull();
+    // Taken afresh by a worker whose beats name no model loaded: getting ready, while its person, who saw it started,
+    // still reads Creating at the share shown before (never backwards).
+    expect(pool.gettingReady(id)).toBe(true);
+    expect(g.message).toBe(POOL_WORDS.working);
+    expect(g.progress).toBe((db().prepare("SELECT shown_peak FROM generations WHERE id = ?").get(id) as { shown_peak: number }).shown_peak);
   });
 
   it("a worker with another model loaded: Getting ready until the first step reports; with its model loaded, Creating at once", async () => {

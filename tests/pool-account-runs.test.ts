@@ -437,7 +437,7 @@ describe("the line", () => {
     expect(g.message).toBe(POOL_WORDS.inLine);
   });
 
-  it("back in line after an attempt, it shows In line with no progress from the attempt before", async () => {
+  it("back in line after it started, it never goes backwards: Creating at its highest share, across a reload, until the new attempt passes it", async () => {
     const w = standInWorker();
     const r = await run({ feature: "image", modelId: "oss-z-image-turbo", prompt: "a lighthouse at dusk" });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
@@ -459,16 +459,32 @@ describe("the line", () => {
       db().prepare("SELECT * FROM relay_workers WHERE id = ?").get(w.id) as never,
       pool.cleanBeat({ device: `wkr-${w.id}`, protocol: 3, version: "1", local: { paused: true, why: "here-now", until: null }, gpu: {}, running: [{ task: t.id }], stopped: [] }),
     );
-    const back = await until(() => {
-      const g = getGeneration(id);
-      return g?.status === "queued" ? g : null;
-    });
-    expect(back?.message).toBe(POOL_WORDS.inLine);
-    expect(back?.progress).toBeNull();
-    expect((db().prepare("SELECT progress FROM generations WHERE id = ?").get(id) as { progress: number | null }).progress).toBeNull();
-    // A row in line never shows a progress it kept from before.
-    db().prepare("UPDATE generations SET progress = 0.6 WHERE id = ?").run(id);
-    expect(getGeneration(id)?.progress).toBeNull();
+    const raw = () => db().prepare("SELECT status, progress, message FROM generations WHERE id = ?").get(id) as { status: string; progress: number | null; message: string | null };
+    await until(() => raw().status === "queued");
+    // The run itself is back in line, with no progress (the owner's views read that)…
+    expect(raw()).toMatchObject({ status: "queued", progress: null, message: POOL_WORDS.inLine });
+    // …while its person sees it still being made, at the highest share shown, with no percent and no place in line.
+    const peak = working!.progress!;
+    const back = getGeneration(id)!;
+    expect(back).toMatchObject({ status: "running", message: POOL_WORDS.working, progress: peak });
+    expect(back.queue).toBeUndefined();
+    // A reload reads the same (the highest share is kept with the run).
+    expect(toGeneration(db().prepare("SELECT * FROM generations WHERE id = ?").get(id) as never)).toMatchObject({ status: "running", message: POOL_WORDS.working, progress: peak });
+    // A worker takes it again: below the highest share, still no percent and the same share…
+    beatAs(w);
+    const again = claimAs(w)!;
+    expect(again.id).toBe(t.id);
+    tasks.report(rowOf(t.id), { event: "sent", promptId: again.promptId }, () => ({ error: "unused" }));
+    tasks.report(rowOf(t.id), { event: "running", value: 1, max: 4 }, () => ({ error: "unused" }));
+    await until(() => raw().status === "running" && (raw().progress ?? 0) > 0);
+    expect(raw().progress!).toBeLessThan(peak);
+    expect(getGeneration(id)).toMatchObject({ status: "running", message: POOL_WORDS.working, progress: peak });
+    // …and past it, its percent climbs again.
+    tasks.report(rowOf(t.id), { event: "running", value: 4, max: 4 }, () => ({ error: "unused" }));
+    await until(() => (raw().progress ?? 0) > peak);
+    const past = getGeneration(id)!;
+    expect(past.message).toBe("Creating · 100%");
+    expect(past.progress!).toBeGreaterThan(peak);
   });
 
   it("place and wait count every task ahead in the order the workers serve them, whatever its lane", () => {
