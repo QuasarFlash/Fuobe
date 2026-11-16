@@ -34,6 +34,14 @@ const mixedPreviewRoute = await import("@/app/api/mixed-media/preview/route");
 const mixedEstimateRoute = await import("@/app/api/mixed-media/estimate/route");
 const mixedRetryRoute = await import("@/app/api/mixed-media/retry/route");
 const mixedProgressRoute = await import("@/app/api/mixed-media/progress/route");
+const { mockProvider } = await import("@/server/providers/mock");
+
+// The placeholders here run at 5× the demo's pace (a demo clip takes 7 s): these chains have up to a dozen steps.
+const demoPoll = mockProvider.poll.bind(mockProvider);
+mockProvider.poll = (ctx) => {
+  const started = Number(ctx.meta.startedAt);
+  return demoPoll({ ...ctx, meta: { ...ctx.meta, startedAt: Date.now() - (Date.now() - started) * 5 } });
+};
 
 const json = (method: string, body?: unknown) =>
   new Request("http://x/api", { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
