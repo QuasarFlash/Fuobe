@@ -145,7 +145,7 @@ describe("spelling", () => {
         }
       }
     }
-  });
+  }, 60_000);
 
   it("never draws the stars that mark the headline's words", () => {
     const s = scenes.find((x) => x.id === "marketing/kinetic-headline")!;

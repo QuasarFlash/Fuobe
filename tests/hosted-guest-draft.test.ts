@@ -32,7 +32,10 @@ win.addEventListener("fuobe:guest-prompt", (e) => events.push(`guest:${(e as Cus
 vi.stubGlobal("window", win);
 // Node before 24 has no Web Locks API (navigator.locks): a stand-in with what browsers do for the calls held-files makes
 // (exclusive locks held while the callback's promise runs, ifAvailable, query).
-if (!globalThis.navigator?.locks) {
+const withLocks = !globalThis.navigator?.locks ? standInLocks() : null;
+if (withLocks) vi.stubGlobal("navigator", withLocks);
+
+function standInLocks(): Navigator {
   const taken = new Set<string>();
   const locks = {
     async request(name: string, a: unknown, b?: unknown) {
@@ -53,7 +56,7 @@ if (!globalThis.navigator?.locks) {
       return { held: [...taken].map((name) => ({ name, mode: "exclusive" })), pending: [] };
     },
   };
-  vi.stubGlobal("navigator", Object.create(globalThis.navigator ?? null, { locks: { value: locks } }));
+  return Object.create(globalThis.navigator ?? null, { locks: { value: locks } }) as Navigator;
 }
 
 const draftLib = await import("@/lib/guest-draft");
@@ -274,6 +277,7 @@ describe("a guest's files, kept in this browser", () => {
     vi.unstubAllGlobals();
     vi.stubGlobal("sessionStorage", storage);
     vi.stubGlobal("window", win);
+    if (withLocks) vi.stubGlobal("navigator", withLocks);
   });
 
   it("each studio's draft forgets only the files it held itself: one taken out of a draft never takes another studio's", () => {
