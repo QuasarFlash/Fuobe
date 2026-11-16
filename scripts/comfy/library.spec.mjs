@@ -234,7 +234,7 @@ export const CUSTOM_NODE_REPOS = {
   'ComfyUI-RE-USE': 'https://github.com/workingprototype/Fuobe/tree/8cc0417b5cb8a603f06502d97d5c6d8c6035ea0d/comfy-nodes/ComfyUI-RE-USE',
   // Fuobe's pinned form of jtydhr88's pack (only the loader and the predictor; NOTICE says what differs).
   'ComfyUI-InstantHMR': 'https://github.com/workingprototype/Fuobe/tree/e4b74735062298af07bb931aed280a440d1b2958/comfy-nodes/ComfyUI-InstantHMR',
-  'ComfyUI-BodyDouble': 'https://github.com/workingprototype/Fuobe/tree/26d386bdacb371d06aa2325ac1b90373a11ff6b7/comfy-nodes/ComfyUI-BodyDouble',
+  'ComfyUI-BodyDouble': 'https://github.com/workingprototype/Fuobe/tree/e5ed1abefc958ce937594aeffa6d5319cb39ff36/comfy-nodes/ComfyUI-BodyDouble',
   // HyperFlow H3 Flash (minimax-h3-flash-*): Video Rebirth's GGUF loader and step schedule (GPL-3.0, v1.0.0), which reads the
   // GGUF through city96's ComfyUI-GGUF (Apache-2.0) and needs it installed beside it.
   'ComfyUI-HyperFlow-Flash': 'https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash/tree/20a22ab2b075f3c948eb5dba62637ff89fc0f363',
