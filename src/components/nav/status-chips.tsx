@@ -170,7 +170,7 @@ function BalanceLine({ row }: { row: BalanceRow }) {
       </div>
       {bar !== null && (
         <div role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bar} aria-label={`${row.label}: ${row.text}`} className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className={cn("h-full rounded-full motion-safe:transition-[width] motion-safe:duration-500", TONE_BAR[tone])} style={{ width: `${bar > 0 ? Math.max(3, bar) : 0}%` }} />
+          <div className={cn("h-full rounded-full origin-left motion-safe:transition-transform duration-(--motion-slow) ease-standard", TONE_BAR[tone])} style={{ transform: `scaleX(${(bar > 0 ? Math.max(3, bar) : 0) / 100})` }} />
         </div>
       )}
       {/* eslint-disable-next-line @next/next/no-img-element -- a small picture the service sends, a path on this site */}
