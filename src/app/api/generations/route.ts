@@ -100,7 +100,9 @@ function replacedRun(body: unknown, accountId: string): Replaced | Blocked | nul
   if (!ids.includes(id)) ids.push(id);
   let asked = 1;
   try {
-    asked = Math.max(1, Number((JSON.parse(row.request_json) as { params?: { numOutputs?: unknown } }).params?.numOutputs) || 1);
+    // A run split one job per output keeps the number asked for as askedOutputs (its numOutputs is the job's own).
+    const r = JSON.parse(row.request_json) as { askedOutputs?: unknown; params?: { numOutputs?: unknown } };
+    asked = Math.max(1, Number(r.askedOutputs ?? r.params?.numOutputs) || 1);
   } catch {}
   // Each job made its share of the outputs asked for.
   const outputs = Math.min(asked, ids.length * Math.ceil(asked / Math.max(1, jobs.length)));

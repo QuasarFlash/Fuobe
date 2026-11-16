@@ -281,13 +281,17 @@ export function stepsProblem(p: Policy, steps: PlannedStep[]): string | null {
  */
 const madeHere3d = (s: { provider: string; op: string; modelId: string }): boolean => s.modelId === ANY_ANGLE.buildModel || poolFinishes3d(s);
 
-/** How many outputs each row asks for (its request's numOutputs: a run split into one job per output keeps it on each). */
+/**
+ * How many outputs each row asks for: a run split into one job per output keeps the number asked for as askedOutputs
+ * (its own params.numOutputs is that job's), otherwise its request's numOutputs.
+ */
 function rowOutputs(ids: string[]): number[] {
   const q = db().prepare("SELECT request_json FROM generations WHERE id = ?");
   return ids.map((id) => {
     const r = q.get(id) as { request_json: string } | undefined;
     try {
-      const n = r ? Number((JSON.parse(r.request_json) as GenerationRequest).params?.numOutputs ?? 1) : 1;
+      const req = r ? (JSON.parse(r.request_json) as GenerationRequest) : null;
+      const n = req ? Number(req.askedOutputs ?? req.params?.numOutputs ?? 1) : 1;
       return Number.isFinite(n) ? n : 1;
     } catch {
       return 1;
