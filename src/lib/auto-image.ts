@@ -106,6 +106,19 @@ export function triggerOrder(text: string, lookup: (id: string) => AutoModelLike
 }
 
 /**
+ * An account's own order for its plain and matched prompts on this install's GPUs, as the billing service's policy gives
+ * it (Policy.auto.image): the models Auto may list, in order, each once, at most AUTO_TRIGGER_MAX. Null when it lists
+ * none (the install's own orders then apply).
+ */
+export function ownAutoOrder(ids: unknown, lookup: (id: string) => AutoModelLike | undefined): string[] | null {
+  if (!Array.isArray(ids)) return null;
+  const out = [...new Set(ids.filter((id): id is string => typeof id === "string").map((id) => id.trim()))]
+    .filter((id) => autoT2iModel(id, lookup(id)))
+    .slice(0, AUTO_TRIGGER_MAX);
+  return out.length ? out : null;
+}
+
+/**
  * The models Auto may plan an operation on: text to image on AUTO_T2I_MODELS and the order for matched prompts (`trigger`,
  * DEFAULT_TRIGGER_MODELS when not given), the others on AUTO_EDIT_MODELS.
  */
@@ -230,12 +243,14 @@ export interface AutoAsk {
  * `trigger` in its order (the saved order; DEFAULT_TRIGGER_MODELS when not given or empty); anything else → MiniMax H3
  * Image, then Krea 2 Realism, then MOSS-Image. The same for the owner, an account and a guest. The server plans the first
  * one that is switched on, runs the operation and fits the GPUs the run goes to (src/server/generations.ts autoRouted),
- * and the next one makes the run when it fails (autoNext).
+ * and the next one makes the run when it fails (autoNext). `plain`: the order for a plain prompt (AUTO_T2I_MODELS when
+ * not given or empty; an account's own order on this install's GPUs, ownAutoOrder).
  */
 export function autoCandidates(
   ask: AutoAsk,
   patterns: readonly { line: string; re: RegExp }[],
   trigger: readonly string[] = DEFAULT_TRIGGER_MODELS,
+  plain: readonly string[] = AUTO_T2I_MODELS,
 ): { models: string[]; why: AutoWhy; pattern?: string } {
   const op = ask.op && ask.op !== "t2i" ? ask.op : (ask.images ?? 0) > 0 ? "edit" : "t2i";
   if (op !== "t2i") return { models: [...(AUTO_EDIT_MODELS[op] ?? [])], why: "edit" };
@@ -243,7 +258,7 @@ export function autoCandidates(
   if (asksForText(words)) return { models: [AUTO_LEAD_MODEL, AUTO_TEXT_MODEL, AUTO_PHOTO_MODEL], why: "text" };
   const pattern = matchedPattern(words, patterns);
   if (pattern) return { models: [...new Set(trigger.length ? trigger : DEFAULT_TRIGGER_MODELS)], why: "trigger", pattern };
-  return { models: [...AUTO_T2I_MODELS], why: "plain" };
+  return { models: [...new Set(plain.length ? plain : AUTO_T2I_MODELS)], why: "plain" };
 }
 
 /** A size tier's place in order ("1K" < "1.5K" < "2K" < "4K"); NaN for a size that isn't a tier. */

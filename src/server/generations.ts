@@ -38,7 +38,8 @@ import { finishSteps, mosaicPixels, unionMasks } from "@/lib/soul-post";
 import { ANGLES_ORIGINAL, MOSAIC_SCALE } from "@/lib/catalog/open-tools";
 import { computeDimensions } from "@/lib/comfy";
 import { captionFromWords, captionWords, parseCaption } from "@/lib/ideogram-caption";
-import { AUTO_IMAGE, AUTO_LARGE_MODELS, autoCandidates, autoModelsFor, autoNext, autoPatterns, autoResolution, nextDeclinedFallback, triggerOrder } from "@/lib/auto-image";
+import { AUTO_IMAGE, AUTO_LARGE_MODELS, autoCandidates, autoModelsFor, autoNext, autoPatterns, autoResolution, nextDeclinedFallback, ownAutoOrder, triggerOrder } from "@/lib/auto-image";
+import { lastPolicy } from "./billing";
 import { h3Frames, h3Prompt, inH3Layout } from "@/lib/h3-prompt";
 import { h3ReferenceTags, h3TalkPrompt } from "@/lib/h3-references";
 import {
@@ -86,7 +87,7 @@ import { takesFilmLooks } from "@/lib/film-looks";
 import { carriesLayout } from "@/lib/layout-prompt";
 import { setResolver, watchGenerations, type LiveEvent } from "./live";
 import { provider, PROVIDERS, RETIRED_PROVIDER_ERROR } from "./providers";
-import { comfyLoraFiles, comfyPlace, computerScope, onOwnGpu, onPoolWorkers, outputFetch, outsideOwnGpu, OWN_OUTPUT_LIMITS, ownGpu, ownLink, probeComfy, relayFile, troubleError, type OwnGpu } from "./providers/comfyui";
+import { accountOnInstall, comfyLoraFiles, comfyPlace, computerScope, onOwnGpu, onPoolWorkers, outputFetch, outsideOwnGpu, OWN_OUTPUT_LIMITS, ownGpu, ownLink, probeComfy, relayFile, troubleError, type OwnGpu } from "./providers/comfyui";
 import { accountById, accountGpu, gpuLink, validToken, type AccountGpu } from "./auth";
 import { accountEngineMode, accountKey, markKeyGood, paidAllowed, usableProviders } from "./account-keys";
 import { addKeyMessage, CLOUD_KEY, CLOUD_PROVIDERS, isCloudProvider, keyRemovedMessage, type CloudProvider } from "@/lib/your-keys";
@@ -1486,6 +1487,18 @@ function autoTriggerNow(): string[] {
 }
 
 /**
+ * Auto's orders for the current run: an account's run on this install's GPUs follows its own order for plain and
+ * matched prompts when the billing service's policy gives one (Policy.auto.image); the owner, a guest, a run on the
+ * account's own GPU or key, and an account the policy gives none for follow the install's (autoTriggerNow, then
+ * AUTO_T2I_MODELS). Lettering and edits keep their own orders.
+ */
+function autoOrdersNow(): { trigger: string[]; plain?: string[] } {
+  const account = accountOnInstall() ? tenantAccount() : undefined;
+  const own = account ? ownAutoOrder(lastPolicy(account)?.auto?.image, getModel) : null;
+  return own ? { trigger: own, plain: own } : { trigger: autoTriggerNow() };
+}
+
+/**
  * A run of Auto (src/lib/auto-image.ts) as the model it picks runs it: the pick it carries (a run planned again: a resend,
  * a run that waited to enter the line, Auto's next model after the one before failed) while it is one of Auto's models
  * for the operation (an older run's Ideogram 4 or FIBO 2 Dev picture is planned again), else the first of its picks for these words
@@ -1502,12 +1515,13 @@ function autoRouted(req: GenerationRequest): GenerationRequest {
     const to = autoResolution(asked, getModel(model));
     return to === asked ? r : { ...r, params: { ...r.params, resolution: to } };
   };
+  const orders = autoOrdersNow();
   if (req.auto) {
     const m = getModel(req.auto.model);
     const op = (req.op && m?.routes.some((r) => r.op === req.op) ? req.op : undefined) ?? (images ? "edit" : "t2i");
-    if (autoModelsFor(op, autoTriggerNow()).includes(req.auto.model)) return sized({ ...req, modelId: req.auto.model, op }, req.auto.model);
+    if (autoModelsFor(op, orders.trigger).includes(req.auto.model)) return sized({ ...req, modelId: req.auto.model, op }, req.auto.model);
   }
-  const c = autoCandidates({ prompt: req.prompt, op: req.op, images }, autoPatternsNow(), autoTriggerNow());
+  const c = autoCandidates({ prompt: req.prompt, op: req.op, images }, autoPatternsNow(), orders.trigger, orders.plain);
   const op: Operation = c.why === "edit" ? (req.op && req.op !== "t2i" ? req.op : "edit") : "t2i";
   const runs = (id: string) => {
     const m = getModel(id);
@@ -3380,7 +3394,11 @@ function declinedAgain(r: Row, declined: DeclinedMeta, later = false): boolean {
     const tried = auto ? [...new Set([...(declined.tried ?? []), r.model_id])] : undefined;
     const order: string[] = [];
     // (A model whose lane needs a large GPU only where the GPUs the run went to can take it: src/server/auto-gpu.ts.)
-    if (tried) order.push(...autoNext(autoCandidates({ prompt: stored.prompt, op: "t2i" }, autoPatternsNow(), autoTriggerNow()).models, tried).filter((m) => !AUTO_LARGE_MODELS.has(m) || there(() => autoFitsHere(m, "t2i"))));
+    if (tried) {
+      // The orders where the run went (an account's own on this install's GPUs).
+      const orders = there(autoOrdersNow);
+      order.push(...autoNext(autoCandidates({ prompt: stored.prompt, op: "t2i" }, autoPatternsNow(), orders.trigger, orders.plain).models, tried).filter((m) => !AUTO_LARGE_MODELS.has(m) || there(() => autoFitsHere(m, "t2i"))));
+    }
     else for (let m = nextDeclinedFallback(declined.model); m; m = nextDeclinedFallback(m)) order.push(m);
     const why = declined.cause === "failed" ? "fallback" : "declined";
     for (const m of order) {

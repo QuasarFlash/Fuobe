@@ -216,6 +216,17 @@ export interface Policy {
    * key left out: the app's own plain sentence. The latest answer's copy applies to every visitor's words.
    */
   copy?: Record<string, string>;
+  /**
+   * Auto's picture models for this account's runs on this install's GPUs, in order: its plain and matched prompts start
+   * there (src/lib/auto-image.ts ownAutoOrder). Absent or empty: the install's own orders. Never applied to a run on the
+   * account's own GPU or key; lettering and edits keep their own orders.
+   */
+  auto?: { image?: string[] };
+  /**
+   * Short words a model menu shows on the right of an open model instead of "Free", by model id, while the viewer's runs
+   * go to this install's GPUs (src/lib/model-marks.ts; at most MARK_MAX characters each). Absent: "Free" as before.
+   */
+  marks?: Record<string, string>;
   ttlS: number;
 }
 
@@ -526,6 +537,18 @@ export function cachedPolicy(accountId: string | null): Policy | null | undefine
   if (!billingConfigured()) return OPEN_POLICY;
   const hit = globalThis.__fuobeBillingPolicies?.get(accountId ?? "");
   return hit && Date.now() - hit.at < hit.ttlMs ? hit.policy : undefined;
+}
+
+/**
+ * The service's last answer for an account, however long ago it came (in memory, else kept across restarts), with no
+ * call: for what may lag an answer by a little, such as Auto's own order (a run on this install's GPUs reads the policy
+ * just before it is planned). No service: OPEN_POLICY. Null when the service never answered for it.
+ */
+export function lastPolicy(accountId: string): Policy | null {
+  if (!billingConfigured()) return OPEN_POLICY;
+  const hit = globalThis.__fuobeBillingPolicies?.get(accountId);
+  if (hit?.goodAt !== undefined && hit.policy) return hit.policy;
+  return savedPolicy(accountId);
 }
 
 /** A free run's quote (no service set): Run keeps its own words. */

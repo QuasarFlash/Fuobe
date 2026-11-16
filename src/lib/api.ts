@@ -1064,6 +1064,8 @@ export interface StatusInfo {
     siteFallback?: SiteFallback;
     /** The words a preset card shows when its run would go to this studio's GPUs ("Try free"), from the server. None: no words. */
     cardText?: string;
+    /** The billing service's words for open models in the model menu, by id, in place of "Free" (src/lib/model-marks.ts). */
+    marks?: Record<string, string>;
     /** What this studio's GPUs keep off, for a viewer with no GPU of its own: its pickers leave it out (src/lib/pool-rules.ts). */
     pool?: PoolRules;
     /** The billing service's words for the account's balance (src/server/billing.ts). */

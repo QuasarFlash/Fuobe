@@ -295,3 +295,54 @@ describe("an account's free run of Auto on this install's GPUs", () => {
     expect((await proxy(req("PUT"))).status).toBe(403);
   });
 });
+
+describe("an account's own Auto order and menu words from the billing service", () => {
+  const ZT = "oss-z-image-turbo";
+  const SCHNELL = "oss-flux1-schnell";
+  beforeEach(() => {
+    process.env.FUOBE_BILLING_URL = fake.url;
+    process.env.FUOBE_BILLING_TOKEN = "test-billing-token";
+    billing.resetBillingCache();
+  });
+
+  it("plain and matched prompts start on the policy's order; lettering keeps its own; when one fails the next in that order makes it", async () => {
+    fake.policy = { ...FAKE_POLICY, auto: { image: [ZT, "not-a-model", SCHNELL, ZT] } };
+    const a = account();
+    accountId = a.id;
+    const plain = await post({ feature: "image", modelId: AUTO_IMAGE, prompt: "a koi pond at night" }, a.cookie, true);
+    expect(plain.status, JSON.stringify(plain.body)).toBe(200);
+    expect(plain.body).toMatchObject({ place: "pool", modelId: ZT });
+    const cat = await post({ feature: "image", modelId: AUTO_IMAGE, prompt: "a cat in an antique-gold paillette gown, her hair lifting in the wind" }, a.cookie, true);
+    expect(cat.body).toMatchObject({ place: "pool", modelId: ZT });
+    const sign = await post({ feature: "image", modelId: AUTO_IMAGE, prompt: 'a neon sign that says "OPEN"' }, a.cookie, true);
+    expect(sign.body).toMatchObject({ place: "pool", modelId: H3 });
+
+    failing = new Set([ZT]);
+    const shown = { amount: (plain.body.quote as { amount: number }).amount, priceVersion: (plain.body.quote as { priceVersion: string }).priceVersion };
+    const r = await post({ feature: "image", modelId: AUTO_IMAGE, prompt: "a koi pond at night", shown }, a.cookie);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const g = await settled(r.body.items![0].id);
+    expect(g.status, g.error ?? "").toBe("succeeded");
+    expect(sent.map((s) => s.model)).toEqual([ZT, SCHNELL]);
+    expect(g.request.auto).toEqual({ model: SCHNELL, why: "fallback" });
+  });
+
+  it("a policy with no order (or none Auto may list): the install's own order", async () => {
+    fake.policy = { ...FAKE_POLICY, auto: { image: ["not-a-model"] } };
+    const a = account();
+    accountId = a.id;
+    const plain = await post({ feature: "image", modelId: AUTO_IMAGE, prompt: "a koi pond at night" }, a.cookie, true);
+    expect(plain.body).toMatchObject({ place: "pool", modelId: H3 });
+  });
+
+  it("the menu words reach the viewer cleaned, only while its runs go to this install's GPUs", async () => {
+    fake.policy = { ...FAKE_POLICY, marks: { "oss-krea2-realism": "Pro", [H3]: "Included", "oss-qwen-image": "far too long a word", bad: 3 } };
+    const acct = auth.createAccount(`marks-${++n}@example.com`, "long enough");
+    const { visitorStatus } = await import("@/server/account-gpu");
+    const v = await visitorStatus(acct);
+    expect(v.viewer?.marks).toEqual({ "oss-krea2-realism": "Pro", [H3]: "Included" });
+    fake.policy = { ...FAKE_POLICY };
+    billing.resetBillingCache();
+    expect((await visitorStatus(acct)).viewer?.marks).toBeUndefined();
+  });
+});

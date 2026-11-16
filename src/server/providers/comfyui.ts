@@ -287,6 +287,9 @@ const onInstallServer = <T,>(fn: () => T): T => poolScope.exit(() => serverScope
  */
 export const onInstallComfy = <T,>(fn: () => T): T => outsideOwnGpu(() => (getSetting("comfyWhere") === "workers" ? serverScope.exit(() => poolScope.run(true, fn)) : onInstallServer(fn)));
 
+/** Is the current work an account's run on this install's GPUs (its workers, or its own ComfyUI server)? */
+export const accountOnInstall = (): boolean => !!tenantAccount() && !!(poolScope.getStore() || serverScope.getStore());
+
 /**
  * The install's own ComfyUI address is on this machine (loopback). Runs of accounts on this install's GPUs go straight
  * to it only then: an address elsewhere would send accounts' files and prompts over a network to a ComfyUI nothing
@@ -1328,7 +1331,7 @@ export async function prepareWorkflow(endpointTemplate: string, input: GenInput,
         return n;
       },
       sent,
-      accountOnInstall: !!tenantAccount() && !!(poolScope.getStore() || serverScope.getStore()),
+      accountOnInstall: accountOnInstall(),
       // (Asked only for the graph it is about, H3 Person Removal's review: no other run reads the settings for it.)
       ownStudio: endpointTemplate === H3_REMOVAL_WORKFLOW && !ownGpu() && !computerScope() && !tenantAccount(),
     });

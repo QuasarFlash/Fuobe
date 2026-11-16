@@ -101,6 +101,7 @@ export function ModelRow({
   setup,
   guest,
   here,
+  mark,
 }: {
   m: ModelDef;
   selected: boolean;
@@ -129,6 +130,8 @@ export function ModelRow({
    * your GPU · 24 GB", "With your fal.ai key"; the owner's "Add to a worker") in place of the price.
    */
   here?: { setup: OwnSetup; owner: boolean } | null;
+  /** The service's word for this open model in place of "Free" (src/lib/model-marks.ts). */
+  mark?: string;
 }) {
   return (
     <>
@@ -187,7 +190,7 @@ export function ModelRow({
           <span className="max-sm:hidden">{guest ? ownSetupLabel({ need: "key", provider: needs[0] }) : addKeyLabel(needs[0])}</span>
         </span>
       ) : (
-        <span className="shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{pickerPrice(m, today, edits)}</span>
+        <span className="shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{(m.engine === "open" && mark) || pickerPrice(m, today, edits)}</span>
       )}
       {/* Pointer only: inside an option it would be a nested control. Keyboard: Alt+S on the highlighted row (starKey). */}
       <button
@@ -505,6 +508,7 @@ export function PickerList({
                   edits={editsClips}
                   setup={ownSetup?.(m)}
                   here={hereRow(m)}
+                  mark={status?.viewer?.marks?.[m.id]}
                 />
               </CommandItem>
             ))}

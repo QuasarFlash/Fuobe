@@ -23,6 +23,7 @@ import {
   triggerOrder,
   matchedPattern,
   nextDeclinedFallback,
+  ownAutoOrder,
 } from "@/lib/auto-image";
 import { EDIT_STUDIO, IMAGE_STUDIO, INPAINT_STUDIO } from "@/lib/studios";
 import { withAutoPattern } from "@/components/add-auto-pattern";
@@ -319,5 +320,24 @@ describe("the order for prompts the patterns match", () => {
     expect(many.length).toBeGreaterThan(AUTO_TRIGGER_MAX);
     expect(autoTriggerModelsProblems(many.slice(0, AUTO_TRIGGER_MAX).join(","), getModel)).toEqual([]);
     expect(autoTriggerModelsProblems(many.slice(0, AUTO_TRIGGER_MAX + 1).join(","), getModel)).toEqual([`Keep it to ${AUTO_TRIGGER_MAX} models`]);
+  });
+});
+
+describe("an account's own order from the billing service (ownAutoOrder)", () => {
+  const t2i = { engine: "open", kind: "image", routes: [{ op: "t2i" }] };
+  const lookup = (id: string) => ({ a: t2i, b: t2i, c: { ...t2i, engine: "cloud" }, d: { ...t2i, routes: [{ op: "edit" }] } })[id as "a"];
+
+  it("keeps the models Auto may list, in order, each once; null when none is left or it isn't a list", () => {
+    expect(ownAutoOrder(["b", " a ", "c", "d", "b", 7, "zz"], lookup)).toEqual(["b", "a"]);
+    expect(ownAutoOrder(["c", "d"], lookup)).toBeNull();
+    expect(ownAutoOrder("a,b", lookup)).toBeNull();
+    expect(ownAutoOrder(undefined, lookup)).toBeNull();
+  });
+
+  it("autoCandidates: a plain prompt follows the given order, lettering and edits keep theirs", () => {
+    expect(autoCandidates({ prompt: "a koi pond" }, [], ["b"], ["a", "b"])).toEqual({ models: ["a", "b"], why: "plain" });
+    expect(autoCandidates({ prompt: "a koi pond" }, [], ["b"], [])).toEqual({ models: [...AUTO_T2I_MODELS], why: "plain" });
+    expect(autoCandidates({ prompt: 'a sign that says "OPEN"' }, [], ["b"], ["a"]).why).toBe("text");
+    expect(autoCandidates({ prompt: "x", images: 1 }, [], ["b"], ["a"]).why).toBe("edit");
   });
 });

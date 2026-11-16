@@ -2,6 +2,7 @@ import "server-only";
 import dns from "node:dns/promises";
 import net from "node:net";
 import { cleanCopy, type ServiceCopy } from "@/lib/service-copy";
+import { cleanMarks, type ModelMarks } from "@/lib/model-marks";
 import { isCloudProvider, type CloudProvider } from "@/lib/your-keys";
 import { accountEngineMode, accountKeyInfo, accountProviders, paidAllowed, usableProviders } from "./account-keys";
 import { accountGpu, type Account, type AccountGpu } from "./auth";
@@ -373,6 +374,11 @@ export interface VisitorView {
    */
   cardText?: string;
   /**
+   * The billing service's words for open models in the model menu, by id, in place of "Free" (src/lib/model-marks.ts).
+   * Only while the viewer's runs go to this install's GPUs.
+   */
+  marks?: ModelMarks;
+  /**
    * What this install's GPUs keep off (the policy's model and app lists, and its kinds), for a visitor with no GPU of its
    * own: its pickers leave those out instead of failing at Run. Absent: nothing is kept off, or it has a GPU of its own.
    */
@@ -490,6 +496,11 @@ export async function visitorStatus(account: Account | null) {
     if (rules) viewer.pool = rules;
     if (account && p?.links?.length) viewer.links = p.links;
     if (account && p?.notice) viewer.notice = p.notice;
+    // The service's words for open models in the menus, while this viewer's runs go to this install's GPUs (not a GPU
+    // of its own it runs on first).
+    const toSite = !gpu || viewer.runOn === "site" || (!viewer.runOn && p?.prefer === "pool");
+    const marks = p?.hosted && toSite ? cleanMarks(p.marks) : null;
+    if (marks) viewer.marks = marks;
     // The service's display copy (wait and limit lines), for guests and accounts alike.
     const copy = p?.hosted ? cleanCopy(p.copy) : null;
     if (copy) viewer.copy = copy;
