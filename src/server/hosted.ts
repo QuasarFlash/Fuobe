@@ -650,11 +650,11 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /**
  * The seconds a run makes whose result follows its input clip (CLIP_LENGTH_OPS) or, for a talking avatar or lip re-sync
- * that follows its voice, the voice, as the run reads it: the length the request states for its clip (params.sourceDuration: a studio's part, the composer's
- * read of the upload), else the header of the uploaded file, as the GPUs' own job size reads it; within the range the
- * request keeps where the run cuts one (params.startTime / endTime); slow motion stretched by its factor. A length the
- * request asks for wins where the run makes that length. Undefined for any other run, null when the clip's length can't be
- * read.
+ * that follows its voice, the voice: the header of the file it reads, as the GPUs' own job size reads it (never a length
+ * the request says instead, which could understate it), else the length the request states (params.sourceDuration: a
+ * chain's clip made by an earlier step, a file only the composer read); within the range the request keeps where the run
+ * cuts one (params.startTime / endTime); slow motion stretched by its factor. A length the request asks for wins where
+ * the run makes that length. Undefined for any other run, null when the length can't be read.
  */
 export function clipRunSeconds(
   req: GenerationRequest,
@@ -685,12 +685,9 @@ export function clipRunSeconds(
   // A talking avatar, and lip re-sync with no clip or on a graph that counts its frames, run as long as the voice
   // (comfy-compose.ts voiceLength); the length the request states is the voice's only for an avatar or with no clip.
   const voice = op === "avatar" || (op === "lipsync" && (!req.inputs?.video || (run.providerId === "comfyui" && binds("frames"))));
-  let length = voice && req.inputs?.video ? null : positive(params.sourceDuration);
-  if (!length) {
-    const file = voice ? (req.inputs?.audio ?? req.inputs?.voiceAudio) : (req.inputs?.video ?? req.inputs?.videos?.[0]);
-    const info = file ? storedMedia(file)?.info : null;
-    length = positive(voice ? info?.duration : (info?.videoDuration ?? info?.duration));
-  }
+  const file = voice ? (req.inputs?.audio ?? req.inputs?.voiceAudio) : (req.inputs?.video ?? req.inputs?.videos?.[0]);
+  const info = file ? storedMedia(file)?.info : null;
+  let length = positive(voice ? info?.duration : (info?.videoDuration ?? info?.duration)) ?? (voice && req.inputs?.video ? null : positive(params.sourceDuration));
   if (!length) return asked ?? null;
   if (voice) return r3(length);
   // The part a range keeps: a trim's, or a graph or route that cuts the clip there.

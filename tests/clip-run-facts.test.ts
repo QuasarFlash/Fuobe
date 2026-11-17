@@ -132,6 +132,10 @@ describe("a run that follows a clip carries the clip's length", () => {
     expect(clipRunSeconds(req, "motion-transfer", { modelId: req.modelId, providerId: "comfyui", workflow: "wan-animate2" })).toBe(12.5);
   });
 
+  it("a stated length never stands for the length of a clip whose header is read", () => {
+    expect(factsOf({ ...motionLite(), params: { resolution: "480p", sourceDuration: 3, extra: { steps: 4 } } }).seconds).toBe(30);
+  });
+
   it("a length the graph doesn't make (a default left in the request) doesn't stand for the clip's", () => {
     expect(factsOf({ ...motionLite(), params: { resolution: "480p", duration: 5 } }).seconds).toBe(30);
   });
