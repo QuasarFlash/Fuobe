@@ -320,6 +320,7 @@ function accountPoolFields(workflowId: string, account: string, generationId: st
   return poolFields(workflowId, {
     account,
     class: stamp?.class ?? "free",
+    priority: stamp?.priority,
     boostMs: stamp?.boostMs,
     ...(run?.rankAt != null && { rankAt: run.rankAt }),
     ...(pressed !== undefined && { rankAt: pressed }),

@@ -1,6 +1,7 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { GenerationRequest } from "@/lib/catalog/types";
+import { cleanPriority } from "@/lib/run-priority";
 
 /**
  * What the server decided about one run before it was created, stamped on every row the run makes (its jobs, and every
@@ -13,7 +14,8 @@ import type { GenerationRequest } from "@/lib/catalog/types";
  * - `charged`: the hold set an amount aside (a free run's sets aside nothing), so a run that ends early says it wasn't
  *   charged.
  * - `checkOutputs`: the moderation service asked to see this run's outputs before they show (moderation.ts).
- * - `class` and `boostMs`: its class in the line ("paid" before "free") and its head start inside that class.
+ * - `class`, `priority` and `boostMs`: its class in the line ("paid" or "free"), its priority within its class
+ *   (src/lib/run-priority.ts) and its head start inside that class.
  * - `light`: a run on this install's GPUs made of light work only (joins, trims): free, and never counted against the
  *   policy's limits on runs there (pool-limits.ts).
  * - `standalone`: an account's run made on its own in a studio (POST /api/generations, Image to 3D's route), not by a
@@ -32,6 +34,8 @@ export interface RunStamp {
   waitMs?: number;
   /** Its class in the line on this install's GPUs, from the billing service (none: "free"). */
   class?: "paid" | "free";
+  /** Its priority within its class, from the billing service (none: 0). */
+  priority?: number;
   /** A head start in line within its class (ms), from the billing service. */
   boostMs?: number;
   /** Light work only (hosted-run.ts lightRun): free, and not counted against the policy's limits. */
@@ -58,7 +62,7 @@ export const withRunStamp = <T,>(stamp: RunStamp, fn: () => T): T => store().run
 export const runStamp = (): RunStamp | undefined => store().getStore();
 
 /** The server-only fields of a request. */
-export const STAMP_FIELDS = ["place", "hold", "charge", "charged", "checkOutputs", "waitMs", "class", "boostMs", "light", "standalone"] as const;
+export const STAMP_FIELDS = ["place", "hold", "charge", "charged", "checkOutputs", "waitMs", "class", "priority", "boostMs", "light", "standalone"] as const;
 
 /** A request with the current stamp's fields, and none of a stored request's own. */
 export function stamped(req: GenerationRequest): GenerationRequest {
@@ -75,6 +79,7 @@ export function stamped(req: GenerationRequest): GenerationRequest {
     ...(s.checkOutputs && { checkOutputs: true }),
     ...(waitOf(s.waitMs) !== undefined && { waitMs: s.waitMs }),
     ...(s.class === "paid" && { class: "paid" as const }),
+    ...(cleanPriority(s.priority) > 0 && { priority: cleanPriority(s.priority) }),
     ...(s.boostMs && s.boostMs > 0 && { boostMs: s.boostMs }),
     ...(s.light && { light: true }),
     ...(s.standalone && { standalone: true }),
@@ -94,6 +99,7 @@ export function stampOf(req: Pick<GenerationRequest, (typeof STAMP_FIELDS)[numbe
     ...(req.checkOutputs && { checkOutputs: true }),
     ...(waitOf(req.waitMs) !== undefined && { waitMs: req.waitMs }),
     ...(req.class === "paid" && { class: "paid" as const }),
+    ...(cleanPriority(req.priority) > 0 && { priority: cleanPriority(req.priority) }),
     ...(req.boostMs && req.boostMs > 0 && { boostMs: req.boostMs }),
     ...(req.light && { light: true }),
     ...(req.standalone && { standalone: true }),

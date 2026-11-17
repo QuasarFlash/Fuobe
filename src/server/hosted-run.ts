@@ -63,6 +63,7 @@ import { runAsTenant } from "./tenant";
 import { needsGpu, ownSetupHere, poolCardRefuses, requestOwnSetup } from "./pool-own-setup";
 import { ADD_KEY_HEADER } from "@/lib/your-keys";
 import type { Place } from "@/lib/place-name";
+import { cleanPriority } from "@/lib/run-priority";
 import { placeFor, placeOfAccount } from "./place-name";
 import { rememberedPlace } from "./run-on";
 import { siteFallbackOn } from "./site-fallback";
@@ -813,8 +814,7 @@ export async function renewalAt(a: { code: string; quote?: Quote }, account: Acc
 
 /**
  * The stamp fields a reserve's answer gives a run: its hold, the words for its charge, whether anything was set aside,
- * its wait limit (the policy's `giveUp` wins), and its class and head start in the line (a paid run goes before every
- * free one).
+ * its wait limit (the policy's `giveUp` wins), and its class, priority and head start in the line.
  */
 export function heldStamp(a: Extract<ReserveAnswer, { ok: true }>, giveUp: number | undefined): RunStamp {
   const boost = Number(a.boostMs);
@@ -825,6 +825,7 @@ export function heldStamp(a: Extract<ReserveAnswer, { ok: true }>, giveUp: numbe
     ...(Number(a.amount) > 0 && { charged: true }),
     ...(giveUp === undefined && a.maxWaitMs > 0 && { waitMs: a.maxWaitMs }),
     ...(a.class === "paid" && { class: "paid" as const }),
+    ...(cleanPriority(a.priority) > 0 && { priority: cleanPriority(a.priority) }),
     ...(Number.isFinite(boost) && boost > 0 && { boostMs: Math.min(boost, 24 * 60 * 60_000) }),
   };
 }

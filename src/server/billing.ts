@@ -245,8 +245,13 @@ export type ReserveAnswer =
       /** The longest the run may wait before a worker first takes it (ms; 0: the install's own limit). */
       maxWaitMs: number;
       pools?: string[];
-      /** The run's class in the line: "paid" goes before "free" (absent: "free"). */
+      /** The run's class in the line: "paid" or "free" (absent: "free"). */
       class?: "paid" | "free";
+      /**
+       * The run's priority within its class, from an external service: a whole number from 0 (none, the same as absent)
+       * to 9, higher first in each round of the line (src/lib/run-priority.ts; anything else is read as 0).
+       */
+      priority?: number;
       text: string;
       /** The hold is made, and the run waits until then (epoch ms) before it enters the line (absent: at once). */
       startAt?: number;

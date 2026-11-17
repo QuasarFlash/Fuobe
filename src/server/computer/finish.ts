@@ -94,7 +94,7 @@ export function queueFinish(o: {
   settings: Record<string, unknown>;
   step?: number;
   /** Its class and place in the line, in place of the run's own (a preview made for an older result goes last). */
-  place?: { class: "paid" | "free" | "owner"; rankAt: number };
+  place?: { class: "paid" | "free" | "owner"; rankAt: number; priority?: number };
 }): string {
   const principal: Principal = o.account ? `acct:${o.account}` : "owner";
   const queued = () => {
@@ -139,6 +139,7 @@ export function queueFinish(o: {
           pools: ["pool"],
           account: o.account,
           class: run?.class ?? (o.account ? "free" : "owner"),
+          ...(run?.priority && { priority: run.priority }),
           rankAt: run?.rankAt ?? now,
           lane: "small",
           needs: { workflowId: `finish-${o.kind}`, files: [], packs: [], minVramBytes: 0 },

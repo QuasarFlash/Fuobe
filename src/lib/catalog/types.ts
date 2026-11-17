@@ -1258,8 +1258,10 @@ export interface GenerationRequest {
   checkOutputs?: boolean;
   /** How long a run on this install's GPUs may wait in line (ms), when the billing service set it. */
   waitMs?: number;
-  /** Server-only: the run's class in the line on this install's GPUs ("paid" goes before "free"), from the billing service. */
+  /** Server-only: the run's class in the line on this install's GPUs ("paid" or "free"), from the billing service. */
   class?: "paid" | "free";
+  /** Server-only: the run's priority within its class (0 to 9, higher first), from the billing service. */
+  priority?: number;
   /** Server-only: a head start in line within its class (ms), from the billing service. */
   boostMs?: number;
   /** Server-only: a run on this install's GPUs made of light work only (joins, trims), free and never counted. */

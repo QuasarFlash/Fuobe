@@ -8,6 +8,7 @@ import { fileChoices, hasVariants, pickFiles, swapGraphFiles, type FileChoice } 
 import type { FileKey } from "@/lib/gpu/types";
 import { POOL_WORDS, RELAY_TIMES, SENT_STATES, type BeatAnswer, type ClaimedTask, type ComputerFacts, type CpuSlot, type WorkerAnswer, type WorkerBeat, type WorkerHolding } from "@/lib/relay";
 import { runtimeFileKeys } from "@/lib/runtime-files";
+import { cleanPriority } from "@/lib/run-priority";
 import { APPS, MODELS } from "@/lib/catalog";
 import { laneName, type LaneName } from "@/lib/lane-names";
 import { clock, hoursAt, parseHours, type Hours } from "@/lib/worker-hours";
@@ -2020,12 +2021,13 @@ export function lineFacts(accountId: string | null, asked: string | null, now = 
 }
 
 /**
- * What a task for workers stores: its lane, its needs, its class and its place in line. A person's run is "free" unless
- * the billing service said "paid"; the owner's own jobs are the "owner" class, served after every person's.
+ * What a task for workers stores: its lane, its needs, its class, its priority and its place in line. A person's run is
+ * "free" unless the billing service said "paid", with the priority it gave (none: 0); the owner's own jobs are the
+ * "owner" class, served after every person's.
  */
 export function poolFields(
   workflowId: string,
-  o: { account?: string; class?: "paid" | "free" | "owner"; boostMs?: number; rankAt?: number; waitMs?: number; onlyWorker?: string; size?: Needs["size"]; catalogVersion?: string; graphSha?: boolean; runtime?: FileNeed[] } = {},
+  o: { account?: string; class?: "paid" | "free" | "owner"; priority?: number; boostMs?: number; rankAt?: number; waitMs?: number; onlyWorker?: string; size?: Needs["size"]; catalogVersion?: string; graphSha?: boolean; runtime?: FileNeed[] } = {},
   now = Date.now(),
 ) {
   const index = loadIndex();
@@ -2042,6 +2044,8 @@ export function poolFields(
     ...(cpuWorkflow(workflowId) && { slot: "cpu" as const }),
     account: o.account,
     class: cls,
+    // Its priority within its class (the billing service's), for people's runs only.
+    ...(cls !== "owner" && cleanPriority(o.priority) > 0 && { priority: cleanPriority(o.priority) }),
     // A head start is only for people's runs, only inside their class, and never more than a day: the owner's own jobs
     // stand in line in the order they came. A later step of a run keeps the run's place (rankAt).
     rankAt: o.rankAt ?? now - (cls === "owner" ? 0 : Math.max(0, Math.min(o.boostMs ?? 0, 24 * 60 * 60_000))),
@@ -2059,7 +2063,7 @@ const SAME_PRESS = "(CASE WHEN @hold IS NOT NULL THEN json_extract(g.request_jso
  * Where a row's job waits in line on the workers as part of its run (one press of Run, which made the row and every step
  * of its chain at once):
  *
- * - `class`: the run's ("paid" when the billing service said so, else "free").
+ * - `class`: the run's ("paid" when the billing service said so, else "free"), and `priority`: the one it gave (0: none).
  * - `rankAt`: the run's place in line. The first job any of its rows had on the workers sets it (the row itself, or a
  *   step of the same run that fed it). A row with no such job yet keeps the time the run was made (less its head start):
  *   a run's first job waits in the order it came, and so does one sent again after its first send was cut off before
@@ -2074,14 +2078,14 @@ const SAME_PRESS = "(CASE WHEN @hold IS NOT NULL THEN json_extract(g.request_jso
  * the run started. Only steps the same press made count (the same billing hold; with none, the same batch): a result
  * kept from an earlier run that a step uses gives it neither that run's place nor its start. Null: no such row.
  */
-export function runPlaceOf(generationId: string): { class: "paid" | "free"; rankAt: number | null; placed: boolean; started: boolean; later: boolean } | null {
+export function runPlaceOf(generationId: string): { class: "paid" | "free"; priority: number; rankAt: number | null; placed: boolean; started: boolean; later: boolean } | null {
   const d = db();
   const g = d
     .prepare(
       `SELECT created_at, depends_on, batch_id, json_extract(request_json, '$.hold') AS hold, json_extract(request_json, '$.class') AS cls,
-         json_extract(request_json, '$.boostMs') AS boost FROM generations WHERE id = ?`,
+         json_extract(request_json, '$.boostMs') AS boost, json_extract(request_json, '$.priority') AS prio FROM generations WHERE id = ?`,
     )
-    .get(generationId) as { created_at: number; depends_on: string | null; batch_id: string | null; hold: unknown; cls: unknown; boost: unknown } | undefined;
+    .get(generationId) as { created_at: number; depends_on: string | null; batch_id: string | null; hold: unknown; cls: unknown; boost: unknown; prio: unknown } | undefined;
   if (!g) return null;
   const press = { id: generationId, hold: typeof g.hold === "string" && g.hold ? g.hold : null, batch: g.batch_id };
   const jobs = d
@@ -2110,6 +2114,7 @@ export function runPlaceOf(generationId: string): { class: "paid" | "free"; rank
       .get(press);
   return {
     class: g.cls === "paid" ? "paid" : "free",
+    priority: cleanPriority(g.prio),
     rankAt: jobs[0]?.rank_at ?? g.created_at - boost,
     placed: jobs.length > 0,
     started: jobs.some((t) => t.claimed_at !== null),

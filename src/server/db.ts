@@ -1160,6 +1160,8 @@ const RELAY_COLUMNS: [string, string, string][] = [
   ["relay_workers", "asked_no_stream", "INTEGER NOT NULL DEFAULT 0"],
   // The last beat at which a worker was on (pool.ts capacityLimits).
   ["relay_workers", "available_at", "INTEGER"],
+  // A run's priority within its class, from an external service (0: none; higher first: pool.ts smartLine).
+  ["relay_tasks", "priority", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 declare global {

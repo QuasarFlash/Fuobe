@@ -28,6 +28,7 @@ import {
   cleanNodeTitle,
 } from "@/lib/relay";
 import { reasonText } from "@/lib/comfy-reason";
+import { cleanPriority } from "@/lib/run-priority";
 import { cleanNodeTimes } from "@/lib/node-times";
 import { trackReport, type LiveProgress } from "@/lib/run-progress";
 import type { FinishTicket } from "@/lib/finish-ticket";
@@ -198,6 +199,10 @@ export interface TaskRow {
   worker_id: string | null;
   /** Its class in the line: "paid", "free" (people's runs) or "owner" (the owner's own jobs, served last). NULL: from before classes, read as "owner" with no account and "free" with one. */
   class: string | null;
+  /** The run's priority within its class, from an external service (0 or absent: none; higher first, at most 9). */
+  priority?: number | null;
+  /** 1: one attempt of it failed (it stalled, or ran past its run limit), and it waits at the back for its last try. */
+  failed_once?: number | null;
   /** Its live progress as JSON (taskProgress), and when its latest preview picture came (null: none kept). */
   progress_json: string | null;
   preview_at: number | null;
@@ -487,7 +492,7 @@ export interface NewTask {
   /** More to keep with it (a finishing job's step). */
   extra?: Record<string, unknown>;
   /** For workers (pool.ts): the pools that may take it, and what they need to. */
-  pool?: { pools: string[]; account?: string; class?: "paid" | "free" | "owner"; rankAt: number; lane: string; needs: unknown; estMs?: number; notAfter?: number; onlyWorker?: string; slot?: "cpu" };
+  pool?: { pools: string[]; account?: string; class?: "paid" | "free" | "owner"; priority?: number; rankAt: number; lane: string; needs: unknown; estMs?: number; notAfter?: number; onlyWorker?: string; slot?: "cpu" };
 }
 
 /** A ComfyUI job for a computer: the graph, the inputs it names, and a prompt id minted here. */
@@ -501,8 +506,8 @@ export function createTask(t: NewTask): { id: string; promptId: string } {
     const pool = t.pool;
     d.prepare(
       `INSERT INTO relay_tasks (id, principal, generation_id, state, graph_json, prompt_id, prefix, meta_batch, preview, workflow_id, extra_json, created_at, updated_at,
-         account, pools, rank_at, lane, needs_json, est_ms, not_after, only_worker, class, ticket_json, finish_json, slot)
-       VALUES (?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         account, pools, rank_at, lane, needs_json, est_ms, not_after, only_worker, class, ticket_json, finish_json, slot, priority)
+       VALUES (?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       t.principal,
@@ -528,6 +533,7 @@ export function createTask(t: NewTask): { id: string; promptId: string } {
       t.ticket ? JSON.stringify(t.ticket) : null,
       t.finish ? JSON.stringify(t.finish) : null,
       pool?.slot ?? null,
+      cleanPriority(pool?.priority),
     );
     const free = d.prepare("SELECT name FROM relay_inputs WHERE principal = ? AND task_id IS NULL ORDER BY created_at").all(t.principal) as { name: string }[];
     let n = 0;
