@@ -33,37 +33,58 @@ const LIBRARY = path.join(ROOT, "workflows/comfyui");
 const idx: RequirementIndex = parseIndex(JSON.parse(fs.readFileSync(path.join(LIBRARY, "requirements.json"), "utf8")));
 const GB = 2 ** 30;
 
-const H3 = "minimax-h3-image-t2i";
-/** No streaming need of its own: 39.5 GiB of model files, VRAM need 32 GB. */
-const FLEX = "minimax-h3-flex-i2v";
+const H3 = "ltx2-t2v";
+/** No streaming need of its own: 37.7 GiB of model files, VRAM need 32 GB. */
+const FLEX = "minimax-h3-i2v-hq";
 /** Never streams: its node pack (ComfyUI-WanVideoWrapper) loads its models itself. */
 const WRAPPED = "lipsync-v2v-infinitetalk";
 const KREA = "krea2-turbo-t2i";
+/** Streaming need 10 GB of VRAM and 32 GB of RAM: measured on a PC that size. */
 const STREAMED = [
-  "minimax-h3-image-t2i",
-  "minimax-h3-image-edit",
   "minimax-h3-fast-t2v",
   "minimax-h3-fast-i2v",
   "minimax-h3-fast-flf2v",
-  "minimax-h3-flash-t2v",
-  "minimax-h3-flash-i2v",
-  "minimax-h3-flash-flf2v",
-  "krea2-turbo-t2i",
   "flux3-klein-t2i",
-  "minimax-h3-i2v",
-  "minimax-h3-flex-ref2va",
-  "qwen-image-21-relight",
-  "fibo2-dev-t2i",
   "ltx25-t2v",
   "video-character-swap-h3",
+  "ltx2-t2v",
+  "wan22-i2v-14b-lightx2v",
+  "wan22-ti2v-5b",
+  "wan22-ti2v-5b-i2v",
+];
+/** Streaming need 8 GB of VRAM and 16 GB of RAM: measured on a PC with an 8 GB card and 16 GB of RAM. */
+const SMALL_STREAMED = [
+  "fibo2-dev-t2i",
+  "ideogram4-t2i",
+  "krea2-turbo-t2i",
+  "minimax-h3-flash-flf2v",
+  "minimax-h3-flash-i2v",
+  "minimax-h3-flash-t2v",
+  "minimax-h3-flex-flf2v",
+  "minimax-h3-flex-i2v",
+  "minimax-h3-flex-ref2va",
+  "minimax-h3-flex-t2v",
+  "minimax-h3-flf2v",
+  "minimax-h3-i2v",
+  "minimax-h3-image-edit",
+  "minimax-h3-image-t2i",
+  "minimax-h3-t2v",
+  "qwen-image-21-relight",
+  "qwen-image-edit-2511",
+  "qwen-image-edit-2511-multi",
+  "qwen-image-edit-2511-multi-fast",
+  "restore-qwen-image-21",
+  "style-ref-qwen-edit-2511",
+  "upscale-video-seedvr2",
+  "upscale-video-seedvr2-chunked",
   "video-fix-faces-h3",
+  "video-from-picture-h3",
   "video-group-swap-h3",
   "video-h3-t2v-2k",
   "video-motion-transfer-h3",
   "video-scene-edit-h3",
+  "wan-animate2",
   "z-image-turbo-t2i",
-  "ltx2-t2v",
-  "wan22-i2v-14b-lightx2v",
 ];
 
 /** The committed inputs with stream-needs.json replaced. */
@@ -73,6 +94,7 @@ const entry = (o: Record<string, unknown> = {}) => ({ workflows: [H3], vramGb: 1
 describe("the catalog's streaming needs (build-requirements.mjs)", () => {
   it("puts each workflow's streaming need in requirements.json", () => {
     for (const id of STREAMED) expect(idx.workflows[id].stream, id).toEqual({ vramGb: 10, ramGb: 32 });
+    for (const id of SMALL_STREAMED) expect(idx.workflows[id].stream, id).toEqual({ vramGb: 8, ramGb: 16 });
     // A workflow with none keeps no field.
     expect("stream" in idx.workflows["sdxl-t2i"]).toBe(false);
   });
@@ -228,7 +250,7 @@ describe("a person's own GPU (readiness)", () => {
     const r = workflowReadiness(H3, comfy(10, 31.9), idx, { account: true });
     expect(r.state).toBe("ready");
     expect(r.vram).toMatchObject({ needGb: 32, fit: "tight", stream: true });
-    const t = toolReadiness(`workflow:${H3}`, "H3 Image", [H3], [], comfy(10, 32), idx, { account: true });
+    const t = toolReadiness(`workflow:${H3}`, "LTX 2", [H3], [], comfy(10, 32), idx, { account: true });
     expect(t.state).toBe("ready");
     expect(t.vram.stream).toBe(true);
     expect(stateLine(t)).toBe("Ready · uses system RAM, slower");
@@ -244,14 +266,14 @@ describe("a person's own GPU (readiness)", () => {
   it("a card that holds it whole says nothing of RAM; a workflow with no streaming need is as before", () => {
     expect(vramFit(32, comfy(32, 64), { vramGb: 10, ramGb: 32 })).toEqual({ needGb: 32, haveGb: 32, fit: "fits" });
     expect(vramFit(32, comfy(10, 64))).toEqual({ needGb: 32, haveGb: 10, fit: "no" });
-    expect(stateLine(toolReadiness(`workflow:${H3}`, "H3 Image", [H3], [], comfy(24, 16), idx, { account: true }))).toBe("Ready · slow on your GPU");
+    expect(stateLine(toolReadiness(`workflow:${H3}`, "LTX 2", [H3], [], comfy(24, 16), idx, { account: true }))).toBe("Ready · slow on your GPU");
   });
 
   it("a workflow with no streaming need of its own: the size of its files decides; one that never streams needs the bigger card", () => {
     const r = workflowReadiness(FLEX, comfy(10, 31.9), idx, { account: true });
     expect(r.state).toBe("ready");
     expect(r.vram).toMatchObject({ needGb: 32, fit: "tight", stream: true });
-    expect(stateLine(toolReadiness(`workflow:${FLEX}`, "H3 Flex", [FLEX], [], comfy(10, 32), idx, { account: true }))).toBe("Ready · uses system RAM, slower");
+    expect(stateLine(toolReadiness(`workflow:${FLEX}`, "H3 HQ", [FLEX], [], comfy(10, 32), idx, { account: true }))).toBe("Ready · uses system RAM, slower");
     expect(workflowReadiness(FLEX, comfy(10, 16), idx, { account: true }).state).toBe("gpu");
     expect(workflowReadiness(WRAPPED, comfy(10, 128), idx, { account: true }).vram).toEqual({ needGb: 24, haveGb: 10, fit: "no" });
   });
@@ -281,7 +303,7 @@ describe("which workers qualify on memory (the claim)", () => {
   const filesOf = (id: string) =>
     [...loadIndex().workflows[id].files, ...(loadIndex().workflows[id].variants ?? []).flatMap((v) => Object.values(v.files))].map((k) => {
       const f = loadIndex().files[k];
-      return { folder: f.folder, name: f.file, size: f.sizeBytes, sha256: "a".repeat(64) };
+      return { folder: f.folder, name: f.file, size: f.sizeBytes, sha256: f.sha256 ?? "a".repeat(64) };
     });
   const beat = (w: W) =>
     pool.workerBeat(
@@ -289,23 +311,24 @@ describe("which workers qualify on memory (the claim)", () => {
       pool.cleanBeat({ device: `wkr-${w.id}`, protocol: 5, version: "1.0.0", local: { paused: false, why: null, until: null }, gpu: {}, inventoryHash: null, running: [], stopped: [], catalogVersion: VERSION }),
       clock,
     );
-  function worker(name: string, id: string, facts: Record<string, unknown>): W {
+  function worker(name: string, id: string, facts: Record<string, unknown>, media: string[] = ["image"]): W {
     const w = pool.addWorker(name);
     pool.patchWorker(w.id, { paused: false, hours: { always: true }, allow: { [pool.poolLane(id)]: { delayMs: 0 } }, claimAfterMs: 0 });
     beat(w);
-    pool.saveInventory(row(w), { files: filesOf(id), nodePacks: [], media: ["image"] });
+    const nodePacks = Object.keys(loadIndex().workflows[id].packs ?? {}).map((p) => ({ name: p, commit: null }));
+    pool.saveInventory(row(w), { files: filesOf(id), nodePacks, media });
     db().prepare("UPDATE relay_workers SET facts_json = ?, catalog_version = ? WHERE id = ?").run(JSON.stringify(facts), VERSION, w.id);
     beat(w);
     return w;
   }
   let gens = 0;
-  function job(id: string): string {
+  function job(id: string, size?: { megapixels: number; seconds: number; outputs: number }): string {
     const gid = `gen-s-${++gens}`;
     db()
       .prepare("INSERT INTO generations (id, feature, model_id, engine, provider, op, kind, status, request_json, outputs_json, created_at, updated_at) VALUES (?, 'image', 'm', 'open', 'comfyui', 't2i', 'image', 'queued', '{}', '[]', ?, ?)")
       .run(gid, clock, clock);
     const graph = JSON.parse(fs.readFileSync(path.join(LIBRARY, `${id}.json`), "utf8"));
-    const t = tasks.createTask({ principal: "owner", generationId: gid, graph, workflowId: id, pool: pool.poolFields(id, {}, clock) }).id;
+    const t = tasks.createTask({ principal: "owner", generationId: gid, graph, workflowId: id, pool: pool.poolFields(id, { size }, clock) }).id;
     db().prepare("UPDATE relay_tasks SET created_at = ? WHERE id = ?").run(clock, t);
     return t;
   }
@@ -340,7 +363,7 @@ describe("which workers qualify on memory (the claim)", () => {
     expect(pool.workersCanRun(H3)).toBe(false);
   });
 
-  it("no streaming need of its own: a 10 GB card with 32 GB of RAM takes a workflow of 39.5 GiB of files, and the claim notes it streams", () => {
+  it("no streaming need of its own: a 10 GB card with 32 GB of RAM takes a workflow of 37.7 GiB of files, and the claim notes it streams", () => {
     const id = job(FLEX);
     expect(claim(worker("flex-low-ram", FLEX, { vramBytes: 10 * GB, ramBytes: 16 * GB }))).toBeNull();
     expect(claim(worker("flex", FLEX, { vramBytes: 10 * GB, ramBytes: 31.9 * GB }))?.id).toBe(id);
@@ -356,7 +379,7 @@ describe("which workers qualify on memory (the claim)", () => {
     expect(c.id).toBe(id);
     expect(c.variant).toBe("int8");
     job(KREA);
-    expect(claim(worker("ampere-low-ram", KREA, { vramBytes: 10 * GB, ramBytes: 16 * GB, gpuGen: "8.6" }))).toBeNull();
+    expect(claim(worker("ampere-low-ram", KREA, { vramBytes: 10 * GB, ramBytes: 8 * GB, gpuGen: "8.6" }))).toBeNull();
   });
 
   // A claim with noStream (the worker's RAM guard): a preference, never a wait.
@@ -423,5 +446,53 @@ describe("which workers qualify on memory (the claim)", () => {
     // A claim without it clears the mark.
     expect(claim(b)).toBeNull();
     expect(row(b).asked_no_stream).toBe(0);
+  });
+
+  /** A PC with an 8 GB card (Ampere) and 16 GB of RAM, as it reports itself. */
+  const EIGHT = { vramBytes: 8589410304, ramBytes: 17101778944, gpuGen: "8.6" };
+  const ALL_MEDIA = ["image", "video", "audio"];
+  const fitOn = (w: W, task: string) => pool.runFit(tasks.taskById(task)!, [{ w: row(w), state: { state: "idle", words: "" } }], clock).workers[0];
+
+  it("an 8 GB card with 16 GB of RAM takes the workflows measured on such a PC, streamed", () => {
+    for (const id of SMALL_STREAMED) {
+      const wf = loadIndex().workflows[id];
+      expect(memoryFit(wf.vramGb, wf.stream, EIGHT), id).toBe("stream");
+      const w = worker(`eight-${id}`, id, EIGHT, ALL_MEDIA);
+      expect(pool.workerFiles(row(w), id), id).not.toBeNull();
+      expect(fitOn(w, job(id)), id).toMatchObject({ can: true, code: null });
+    }
+  });
+
+  it("an 8 GB card with 16 GB of RAM still takes no workflow that failed there; a 10 GB card with 32 GB of RAM still takes them", () => {
+    // Character swap ran past its time limit there; Wan 2.2 5B stopped its ComfyUI at the RAM's limit.
+    for (const id of ["video-character-swap-h3", "wan22-ti2v-5b", "wan22-ti2v-5b-i2v"]) {
+      const wf = loadIndex().workflows[id];
+      expect(memoryFit(wf.vramGb, wf.stream, EIGHT), id).toBeNull();
+      const task = job(id);
+      expect(fitOn(worker(`eight-${id}`, id, EIGHT, ALL_MEDIA), task), id).toMatchObject({ can: false, code: "memory" });
+      expect(fitOn(worker(`ten-${id}`, id, { vramBytes: 9.99 * GB, ramBytes: 31.9 * GB, gpuGen: "8.6" }, ALL_MEDIA), task), id).toMatchObject({ can: true, code: null });
+    }
+    // The workflows measured on the smaller PC stay open to the bigger one.
+    for (const id of SMALL_STREAMED) {
+      const wf = loadIndex().workflows[id];
+      expect(memoryFit(wf.vramGb, wf.stream, { vramBytes: 9.99 * GB, ramBytes: 31.9 * GB }), id).toBe("stream");
+    }
+  });
+
+  it("an 8 GB card with 16 GB of RAM takes runs of the sizes people asked for, within its lane's clip limit", () => {
+    const shapes: [string, { megapixels: number; seconds: number; outputs: number }][] = [
+      ["z-image-turbo-t2i", { megapixels: 2.36, seconds: 0, outputs: 1 }],
+      ["minimax-h3-image-t2i", { megapixels: 4.18, seconds: 0, outputs: 1 }],
+      ["minimax-h3-flex-ref2va", { megapixels: 1.06, seconds: 4.44, outputs: 1 }],
+    ];
+    for (const [id, size] of shapes) {
+      const w = worker(`eight-${id}`, id, EIGHT, ALL_MEDIA);
+      pool.patchWorker(w.id, { allow: { [pool.poolLane(id)]: { delayMs: 0, maxSeconds: 5.2 } } }, clock);
+      expect(fitOn(w, job(id, size)), id).toMatchObject({ can: true, code: null });
+    }
+    // A clip longer than the lane takes there: the lane's limit, not its memory.
+    const w = worker("eight-long", "minimax-h3-flex-ref2va", EIGHT, ALL_MEDIA);
+    pool.patchWorker(w.id, { allow: { [pool.poolLane("minimax-h3-flex-ref2va")]: { delayMs: 0, maxSeconds: 5.2 } } }, clock);
+    expect(fitOn(w, job("minimax-h3-flex-ref2va", { megapixels: 1.06, seconds: 10, outputs: 1 }))).toMatchObject({ can: false, code: "clip" });
   });
 });

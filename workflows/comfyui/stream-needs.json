@@ -2,33 +2,56 @@
   "streams": [
     {
       "workflows": [
-        "fibo2-dev-t2i",
         "flux3-klein-t2i",
-        "krea2-turbo-t2i",
         "ltx2-t2v",
         "ltx25-t2v",
         "minimax-h3-fast-flf2v",
         "minimax-h3-fast-i2v",
         "minimax-h3-fast-t2v",
+        "video-character-swap-h3",
+        "wan22-i2v-14b-lightx2v",
+        "wan22-ti2v-5b",
+        "wan22-ti2v-5b-i2v"
+      ],
+      "vramGb": 10,
+      "ramGb": 32
+    },
+    {
+      "workflows": [
+        "fibo2-dev-t2i",
+        "ideogram4-t2i",
+        "krea2-turbo-t2i",
         "minimax-h3-flash-flf2v",
         "minimax-h3-flash-i2v",
         "minimax-h3-flash-t2v",
+        "minimax-h3-flex-flf2v",
+        "minimax-h3-flex-i2v",
         "minimax-h3-flex-ref2va",
+        "minimax-h3-flex-t2v",
+        "minimax-h3-flf2v",
         "minimax-h3-i2v",
         "minimax-h3-image-edit",
         "minimax-h3-image-t2i",
+        "minimax-h3-t2v",
         "qwen-image-21-relight",
-        "video-character-swap-h3",
+        "qwen-image-edit-2511",
+        "qwen-image-edit-2511-multi",
+        "qwen-image-edit-2511-multi-fast",
+        "restore-qwen-image-21",
+        "style-ref-qwen-edit-2511",
+        "upscale-video-seedvr2",
+        "upscale-video-seedvr2-chunked",
         "video-fix-faces-h3",
+        "video-from-picture-h3",
         "video-group-swap-h3",
         "video-h3-t2v-2k",
         "video-motion-transfer-h3",
         "video-scene-edit-h3",
-        "wan22-i2v-14b-lightx2v",
+        "wan-animate2",
         "z-image-turbo-t2i"
       ],
-      "vramGb": 10,
-      "ramGb": 32
+      "vramGb": 8,
+      "ramGb": 16
     }
   ],
   "noStream": {
