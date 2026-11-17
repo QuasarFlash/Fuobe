@@ -133,7 +133,8 @@ export function poolMostWords(endpoint: string | undefined, size: JobSize): stri
   if (!endpoint || endpoint.includes("{")) return null;
   const most = workersMost(endpoint, size);
   if (most.maxMegapixels !== undefined && size.megapixels > most.maxMegapixels) return `${tenth(most.maxMegapixels)} megapixels`;
-  if (most.maxSeconds !== undefined && size.seconds > most.maxSeconds) return `${tenth(most.maxSeconds)} s clips`;
+  // Whole seconds, as people pick lengths: a frame grid's few tenths over (5.2 s) read as the length below.
+  if (most.maxSeconds !== undefined && size.seconds > most.maxSeconds) return `${Math.max(1, Math.floor(most.maxSeconds))} s clips`;
   if (most.maxOutputs !== undefined && size.outputs > most.maxOutputs) return `${most.maxOutputs} results at a time`;
   return null;
 }

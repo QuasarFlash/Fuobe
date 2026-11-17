@@ -388,8 +388,12 @@ export function gateWords(reason: Exclude<GateReason, "ownSetup" | "outputs">, g
   return (guest ? hostedGuestWords() : hostedWords(place))[reason];
 }
 
+/** A size refusal for a clip's length (poolMostWords: "15 s clips"): its plain label and line. */
+const clipLimit = (gate: GateRefusal): string | null => (gate.reason === "size" && gate.most?.endsWith(" s clips") ? gate.most : null);
+
 /** A gate's refusal in words: the own setup's label (the same for a guest and an account), or the reason's label. */
 export const gateText = (gate: GateRefusal, guest: boolean, place: Place): string =>
+  clipLimit(gate) ? `Up to ${clipLimit(gate)}` :
   gate.reason === "ownSetup" || gate.reason === "model3d"
     ? ownSetupLabel(gate.setup ?? (gate.reason === "model3d" ? model3dSetup() : needsGpu()))
     : gate.reason === "outputs"
@@ -400,6 +404,7 @@ export const gateText = (gate: GateRefusal, guest: boolean, place: Place): strin
 export function gateDetail(gate: GateRefusal, place: Place): string | undefined {
   if (gate.reason === "ownSetup" || gate.reason === "model3d") return ownSetupDetail(gate.setup ?? model3dSetup());
   if (gate.reason === "outputs") return undefined;
+  if (clipLimit(gate)) return "Pick a shorter clip, or run it on your own GPU.";
   return hostedDetails(place, gate.most)[gate.reason];
 }
 

@@ -280,3 +280,16 @@ describe("where runs go: the Run on list, Settings and the one-time note", () =>
     }
   });
 });
+
+describe("a clip too long for the GPUs here", () => {
+  it("reads as the longest clip in whole seconds, with a plain line under it", async () => {
+    const { gateText, gateDetail } = await import("@/server/hosted-run");
+    const place = { label: "Our GPUs", text: "our GPUs" } as Parameters<typeof gateText>[2];
+    const gate = { ok: false as const, reason: "size" as const, most: "15 s clips" };
+    expect(gateText(gate, false, place)).toBe("Up to 15 s clips");
+    expect(gateText(gate, true, place)).toBe("Up to 15 s clips");
+    expect(gateDetail(gate, place)).toBe("Pick a shorter clip, or run it on your own GPU.");
+    // A picture's size keeps its own words.
+    expect(gateText({ ok: false, reason: "size", most: "8 megapixels" }, false, place)).toBe("This size runs self-hosted");
+  });
+});
