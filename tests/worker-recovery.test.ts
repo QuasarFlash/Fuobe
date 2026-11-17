@@ -38,7 +38,8 @@ import { apiAs, loadRoutes, type ComputerRoutes } from "./helpers/computer-tab";
 import { tempDir } from "./helpers/temp-dir";
 
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), connection: async () => {} }));
-vi.setConfig({ testTimeout: 120_000 });
+// Its routes load in a hook: on a busy machine that takes longer than the default 10 s.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 const dir = tempDir("fuobe-worker-recovery-");
 process.env.FUOBE_DATA_DIR = dir;
@@ -88,10 +89,15 @@ function addWorker(): W {
 }
 
 let gens = 0;
-/** A job for the workers that loads one input (a picture, or a clip) and saves a picture (or what `save` says). */
+let lastRank = 0;
+/**
+ * A job for the workers that loads one input (a picture, or a clip) and saves a picture (or what `save` says). Each job
+ * stands in line after the one made before it: two made in the same millisecond would otherwise tie, and the line
+ * breaks a tie by the jobs' random ids.
+ */
 function addTask(o: { clip?: Buffer; save?: { class_type: string; inputs: Record<string, unknown> }; account?: string } = {}): { id: string; input: string } {
   const gid = `recovery-gen-${++gens}`;
-  const now = Date.now();
+  const now = (lastRank = Math.max(Date.now(), lastRank + 1));
   db()
     .prepare("INSERT INTO generations (id, feature, model_id, engine, provider, op, kind, status, request_json, outputs_json, created_at, updated_at) VALUES (?, 'image', 'm', 'open', 'comfyui', 't2i', 'image', 'queued', '{}', '[]', ?, ?)")
     .run(gid, now, now);
@@ -141,8 +147,50 @@ function router(w: W, s: Studio) {
   };
 }
 
+/** Each holdFinish of the test: lets every report it holds (or would hold) go, so its worker can end. */
+const holds: (() => void)[] = [];
+
+/**
+ * Holds each job's "finished" report at the studio until the test lets it go: the job stays in the worker's hands (its
+ * render done, its report not yet answered) for as long as the test needs, however fast or slow the machine is.
+ * `reached(id)`: once that job's report has come; `release(id)`: the studio answers it. Call it after any other
+ * intercept is set (it wraps it).
+ */
+function holdFinish(s: Studio) {
+  const gates = new Map<string, { reached: Promise<void>; arrive: () => void; released: Promise<void>; release: () => void }>();
+  const gate = (id: string) => {
+    let g = gates.get(id);
+    if (!g) {
+      let arrive = () => {};
+      let release = () => {};
+      const reached = new Promise<void>((r) => (arrive = r));
+      const released = new Promise<void>((r) => (release = r));
+      g = { reached, arrive, released, release };
+      gates.set(id, g);
+    }
+    return g;
+  };
+  let open = false;
+  holds.push(() => {
+    open = true;
+    for (const g of gates.values()) g.release();
+  });
+  const inner = s.intercept;
+  s.intercept = async (q, init) => {
+    const id = /^\/api\/gpu\/computer\/tasks\/([^/]+)\/report$/.exec(q)?.[1];
+    if (!open && id && JSON.parse(String(init.body)).event === "finished") {
+      const g = gate(id);
+      g.arrive();
+      await g.released;
+    }
+    return inner?.(q, init);
+  };
+  return { reached: (id: string) => gate(id).reached, release: (id: string) => gate(id).release() };
+}
+
 const running: { ctrl: AbortController; done: Promise<unknown> }[] = [];
 afterEach(async () => {
+  for (const release of holds.splice(0)) release();
   for (const r of running.splice(0)) {
     r.ctrl.abort();
     await r.done.catch(() => {});
@@ -174,7 +222,7 @@ function start(
   w: W,
   s: Studio,
   p: Pc,
-  o: { steps?: number; stepMs?: number; failNext?: string; stallMin?: number; hungMin?: number; ffmpeg?: string | null; rescanMs?: number; modelsCheckMs?: number; modelDirs?: string[]; requirements?: unknown; pins?: Record<string, string>; command?: string[]; readGpu?: () => Promise<unknown>; gpuEveryMs?: number; port?: number; now?: () => number; sleep?: (ms: number) => Promise<void>; env?: Record<string, string | undefined>; codeWatch?: unknown; updateDeferMs?: number } = {},
+  o: { steps?: number; stepMs?: number; failNext?: string; stallMin?: number; hungMin?: number; ffmpeg?: string | null; rescanMs?: number; modelsCheckMs?: number; modelDirs?: string[]; requirements?: unknown; pins?: Record<string, string>; command?: string[]; readGpu?: () => Promise<unknown>; gpuEveryMs?: number; port?: number; now?: () => number; sleep?: (ms: number) => Promise<void>; env?: Record<string, string | undefined>; codeWatch?: unknown; updateDeferMs?: number; hold?: string } = {},
 ) {
   const ctrl = new AbortController();
   const cfg = {
@@ -187,6 +235,7 @@ function start(
       process.execPath, "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", FAKE, "--port", "{port}", "--cors", "off",
       "--steps", String(o.steps ?? 4), "--step-ms", String(o.stepMs ?? 40), "--worker-guard", "1", "--count-file", p.countFile, "--graph-file", p.graphFile,
       ...(o.failNext ? ["--fail-next", o.failNext] : []),
+      ...(o.hold ? ["--hold-file", o.hold] : []),
     ],
     comfyGuard: true,
     stallMin: o.stallMin ?? 10,
@@ -223,6 +272,17 @@ function start(
   running.push(r);
   return r;
 }
+
+/**
+ * A file that holds its ComfyUI's running job at `step` (its stand-in's --hold-file) until the test deletes it: the job
+ * is mid-run for as long as the test needs, however fast or slow the machine is.
+ */
+const holdAt = (step: number) => {
+  const file = path.join(tempDir("fuobe-worker-hold-"), "hold.txt");
+  fs.writeFileSync(file, String(step));
+  return file;
+};
+const letGo = (file: string) => fs.rmSync(file, { force: true });
 
 const studio = (): Studio => ({ calls: [], reports: [], inventories: [], intercept: null, tokens: [] });
 
@@ -265,7 +325,9 @@ describe("a worker keeps its jobs going", () => {
     const s = studio();
     const p = pc();
     const { id } = addTask();
-    start(w, s, p, { steps: 40, stepMs: 150 });
+    // The first one's job stays mid-run (held at its second step) until the second one has come and gone.
+    const hold = holdAt(2);
+    start(w, s, p, { steps: 10, stepMs: 50, hold });
     const comfy = await until(async () => {
       const c = comfyOf(p);
       return c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 2 ? c : null;
@@ -283,6 +345,7 @@ describe("a worker keeps its jobs going", () => {
     expect(fs.existsSync(path.join(p.workDir, "input", "in-use.png"))).toBe(true);
     expect(fs.existsSync(path.join(p.workDir, "temp", "in-use.txt"))).toBe(true);
     expect(p.logs.slice(logs).some((l) => /Stopped a ComfyUI|Starting its own ComfyUI/.test(l))).toBe(false);
+    letGo(hold);
     const t = await ended(id);
     expect(t.state).toBe("done");
     expect(prompts(p)).toBe(1);
@@ -301,7 +364,9 @@ describe("a worker keeps its jobs going", () => {
     const s = studio();
     const p = pc();
     const { id } = addTask();
-    start(w, s, p, { steps: 10, stepMs: 150 });
+    // Held at 50% until its ComfyUI is killed (its next start runs the job to the end).
+    const hold = holdAt(5);
+    start(w, s, p, { steps: 10, stepMs: 150, hold });
     const comfy = await until(async () => {
       const c = comfyOf(p);
       return c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 5 ? c : null;
@@ -310,6 +375,7 @@ describe("a worker keeps its jobs going", () => {
     expect(await raw(comfy.port, "/system_stats", { Host: `127.0.0.1:${comfy.port}` })).toBe(403);
     expect(await raw(comfy.port, "/prompt", { Host: `rebound.example:${comfy.port}` })).toBe(403);
     process.kill(comfy.pid, "SIGKILL");
+    letGo(hold);
     const t = await ended(id);
     expect(t.state).toBe("done");
     expect(fs.readFileSync(tasks.outputFile(id, 0)).equals(FAKE_PNG)).toBe(true);
@@ -442,18 +508,23 @@ describe("a worker keeps its jobs going", () => {
     const s = studio();
     const p = pc();
     const { id } = addTask();
-    start(w, s, p, { steps: 30, stepMs: 200 });
-    const comfy = await until(async () => {
+    // Held at its third step: still running when the studio takes it back.
+    const hold = holdAt(3);
+    start(w, s, p, { steps: 10, stepMs: 50, hold });
+    const { comfy, posts } = await until(async () => {
       const c = comfyOf(p);
-      return c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 3 ? c : null;
+      const st = c && (await fakeStats(c.port).catch(() => null));
+      return c && st && (st.step ?? 0) >= 3 && { comfy: c, posts: st.posts };
     });
     // The studio puts the job back in line (as when it lost touch with the worker): its next report gets 409.
     pool.backInLine(state(id), { blame: false });
+    // That prompt stops on its ComfyUI: none runs, or the job's next try came (held at step 3, it can't pass it).
     const stopped = await until(async () => {
       const st = await fakeStats(comfy.port);
-      return st.running === null || (st.step !== null && st.step < 3) ? st : null;
+      return st.running === null || st.posts > posts ? st : null;
     }, 10_000);
     expect(stopped).toBeTruthy();
+    letGo(hold);
     const t = await ended(id);
     expect(t.state).toBe("done");
     expect(prompts(p)).toBe(2);
@@ -651,7 +722,9 @@ describe("people first", () => {
     const s = studio();
     const p = pc();
     const own = addTask();
-    start(w, s, p, { steps: 30, stepMs: 150 });
+    // Its ComfyUI holds the owner's job at its second step until it has gone back in line (the worker's next beat).
+    const hold = holdAt(2);
+    start(w, s, p, { steps: 10, stepMs: 50, hold });
     await until(async () => {
       const c = comfyOf(p);
       return state(own.id).state === "running" && c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 2;
@@ -660,6 +733,7 @@ describe("people first", () => {
     // the owner's job again).
     const person = addTask({ account: "acct-preempt" });
     await until(() => state(own.id).state === "waiting" && state(own.id));
+    letGo(hold);
     expect(state(own.id).requeues).toBe(0);
     expect(pool.poolWaitWords(state(own.id))).toBe("Paused for a moment · starts again automatically");
     // The worker took the person's run next.
@@ -691,13 +765,14 @@ describe("new worker code", () => {
     const s = studio();
     const p = pc();
     const { id } = addTask();
-    const r = start(w, s, p, { steps: 20, stepMs: 150, codeWatch: watch(p) });
-    await until(async () => {
-      const c = comfyOf(p);
-      return c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 2;
-    });
+    const hold = holdFinish(s);
+    const r = start(w, s, p, { codeWatch: watch(p) });
+    // The job is in its hands (rendered, its report held at the studio) when the new code comes.
+    await hold.reached(id);
     const next = addTask();
     installed(p);
+    await until(() => p.logs.includes(LINE));
+    hold.release(id);
     expect(await r.done).toBe("update");
     // Never mid-job: the job ran to the end, once, and the next one stays in line for another start.
     expect(state(id).state).toBe("done");
@@ -731,15 +806,18 @@ describe("new worker code", () => {
     const first = addTask();
     const person = addTask();
     peopleSay(s, () => (state(person.id).state === "waiting" ? 1 : 0));
-    // Each job runs longer than a beat apart (5 s while busy), so a beat while the person's job runs says none waits.
-    const r = start(w, s, p, { steps: 20, stepMs: 400, codeWatch: watch(p) });
-    await until(async () => {
-      const c = comfyOf(p);
-      return state(first.id).state !== "waiting" && c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 2;
-    });
+    // Each job stays in its hands until the test lets its report go: the new code comes while the first is in hand and
+    // the person's waits, and the person's is still in hand when a beat (every 5 s while busy) says none waits.
+    const hold = holdFinish(s);
+    const r = start(w, s, p, { codeWatch: watch(p) });
+    await hold.reached(first.id);
     installed(p);
     await until(() => p.logs.some((l) => l.startsWith("New worker code is installed: restarting once no person's job waits for it")));
     const owners = addTask();
+    hold.release(first.id);
+    await hold.reached(person.id);
+    await until(() => p.logs.includes(LINE));
+    hold.release(person.id);
     expect(await r.done).toBe("update");
     expect(state(first.id).state).toBe("done");
     expect(state(person.id).state).toBe("done");
@@ -757,12 +835,13 @@ describe("new worker code", () => {
     const first = addTask();
     const waiting = addTask();
     peopleSay(s, () => 1);
-    const r = start(w, s, p, { steps: 20, stepMs: 150, codeWatch: watch(p), updateDeferMs: 0 });
-    await until(async () => {
-      const c = comfyOf(p);
-      return state(first.id).state !== "waiting" && c && ((await fakeStats(c.port).catch(() => null))?.step ?? 0) >= 2;
-    });
+    // The first job stays in its hands until the worker has said it restarts after it.
+    const hold = holdFinish(s);
+    const r = start(w, s, p, { codeWatch: watch(p), updateDeferMs: 0 });
+    await hold.reached(first.id);
     installed(p);
+    await until(() => p.logs.includes(LINE));
+    hold.release(first.id);
     expect(await r.done).toBe("update");
     expect(state(first.id).state).toBe("done");
     expect(state(waiting.id).state).toBe("waiting");
@@ -901,9 +980,12 @@ describe("its model folders", () => {
     let offset = 0;
     let sleepNext = 0;
     const { id } = addTask();
+    // Held at its second step: mid-run when the PC sleeps, until its next beat has said so.
+    const hold = holdAt(2);
     start(w, s, p, {
-      steps: 40,
-      stepMs: 100,
+      steps: 10,
+      stepMs: 50,
+      hold,
       now: () => Date.now() + offset,
       sleep: async (ms) => {
         await sleep(Math.min(ms, 50));
@@ -930,6 +1012,7 @@ describe("its model folders", () => {
     }, 30_000);
     await until(() => beats.some((b) => typeof b.slept === "number" && (b.slept as number) >= 5 * 60_000));
     const told = beats.findIndex((b) => typeof b.slept === "number");
+    letGo(hold);
     const done = await ended(id);
     expect(done.state).toBe("done");
     // The attempt lost to the sleep was taken back: no blame on the worker.

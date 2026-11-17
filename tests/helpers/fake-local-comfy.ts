@@ -95,6 +95,11 @@ export interface LocalComfyOptions {
   graphFile?: string;
   /** A folder that keeps a copy of every upload, under its name (a test reads what reached ComfyUI). */
   uploadDir?: string;
+  /**
+   * While this file is there, a running job takes no step past the number written in it (a test in another process
+   * holds a job mid-run for as long as it needs, and lets it go by deleting the file).
+   */
+  holdFile?: string;
 }
 
 /** One live render the stand-in made (for the bookkeeping checks). */
@@ -355,6 +360,17 @@ export function startLocalComfy(given: LocalComfyOptions, port = 0): Promise<Loc
     timer = setTimeout(next, opts.latencyMs);
   }
 
+  /** The step a held job stops at (holdFile), or Infinity. */
+  const heldAt = () => {
+    if (!opts.holdFile) return Infinity;
+    try {
+      const n = Number(readFileSync(opts.holdFile, "utf8"));
+      return Number.isFinite(n) ? n : Infinity;
+    } catch {
+      return Infinity;
+    }
+  };
+
   function run(job: Job) {
     if (isLiveGraph(job.graph)) return runLive(job);
     running = job;
@@ -380,6 +396,10 @@ export function startLocalComfy(given: LocalComfyOptions, port = 0): Promise<Loc
     const next = () => {
       if (!alive()) return;
       if (job.fail === "never") return;
+      if (step < steps && step >= heldAt()) {
+        timer = setTimeout(next, 20);
+        return;
+      }
       if (step < steps) {
         step++;
         currentStep = step;
@@ -787,6 +807,7 @@ export function startLocalComfy(given: LocalComfyOptions, port = 0): Promise<Loc
 // key in FUOBE_WORKER_GUARD_KEY (as a worker starts its ComfyUI). [--count-file <path>]: a line for each prompt posted.
 // [--graph-file <path>]: each prompt's graph, a line of JSON each. [--fail-next oom|never]: what the first prompt does.
 // [--outputs video,audio]: what a job saves. [--upload-dir <path>]: a copy of every upload, under its name.
+// [--hold-file <path>]: while it is there, a running job takes no step past the number in it.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const arg = (name: string) => {
     const i = process.argv.indexOf(`--${name}`);
@@ -808,6 +829,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       ...(arg("count-file") && { countFile: arg("count-file") }),
       ...(arg("graph-file") && { graphFile: arg("graph-file") }),
       ...(arg("upload-dir") && { uploadDir: arg("upload-dir") }),
+      ...(arg("hold-file") && { holdFile: arg("hold-file") }),
       ...(arg("fail-next") && { failNext: arg("fail-next") as LocalComfyOptions["failNext"] }),
       ...(arg("outputs") && { outputs: arg("outputs")!.split(",") as LocalComfyOptions["outputs"] }),
       has,
