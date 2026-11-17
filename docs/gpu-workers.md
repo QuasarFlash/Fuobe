@@ -470,20 +470,38 @@ A worker gets a job only when all of these are true, all in one SQLite transacti
 - it verified every run-time file the job loads (see "Run-time files" below);
 - the retry rule allows it: a worker that lost or failed the job gets it again only when no other worker that can run
   the job was heard from in the last 10 minutes;
+- a job whose attempt failed waits for the line to be free (below);
 - near the end of its hours, the job's estimate fits before the window closes;
 - it holds no other job. A worker runs one job at a time: while it holds one, a claim gives it that job again when
   it lost track of it, and nothing new;
 - no free worker with a higher pick order would take the job next, for the first-pick grace (see "Who picks first"
   below).
 
-Jobs go by class (`paid`, then `free`, then `owner`), then by the lowest `rank_at` (then the oldest). With the
-pick allowance at 0 (the default), that is the whole rule. Above 0, a worker may take one of the owner's own jobs in its
-warm lane (the models it has loaded) ahead of the owner's best job, while that job has waited less than the pick
-allowance (or the worker's own `switch_after_ms`, if that is lower). A warm lane never makes a person wait: while a
-person's run waits that the worker can take, its next claim takes the best of them, whatever lane it has loaded. With fair share on, each class goes round its
-accounts: an account's next run goes after every other account's run that is an earlier turn of its own. An account's
-turns count the runs a worker holds for it now and those a worker finished for it since the oldest run still waiting
-in that class came.
+People's runs (an account's, a guest's, the owner's hands-on run) go before the owner's own jobs, in this order
+(`smartLine` in `src/server/computer/pool.ts`):
+
+1. A run that has waited 20 minutes or longer goes to the front, the oldest first. No run waits forever behind quicker
+   ones.
+2. The others go in rounds. Each person with a run waiting has one turn in each round, and the turn takes that
+   person's quickest run for the worker that asks (the lane's bench on that worker, else the lane's typical run, else
+   a guess from the job's size). In each round, people watching their runs go first (a page of theirs asked about
+   their runs in the last minute: the runs list, a run, or its live picture, which an open page asks for while a run
+   waits or works), then by the run's `priority` from the billing service (higher first), then people with no finished
+   run on the GPUs yet, then everyone else. At each level, the person who has waited longest goes first. A person's
+   turns count the runs a worker holds for them now, those a worker finished for them since the oldest run still
+   waiting came, and their runs in step 1.
+3. A run whose attempt failed (it stalled, or ran past its run limit) goes to the back. It has its last try only when
+   no other person's run waits that a worker on now could take; if that try fails too, the run fails. A worker that
+   went silent, a ComfyUI that went down or lost the job, or a job given back for memory or a busy PC is a recovery:
+   the run keeps its place, and the third lost attempt fails it.
+
+A worker takes the first job in that order that it can run, with one exception: a job that only it can make (no other
+worker on now could run it) goes first, so a big GPU doesn't take what a smaller one could while a job only it can
+make waits. The owner's own jobs go in the order they came. With the pick allowance at 0 (the default), that is the
+whole rule. Above 0, a worker may take one of the owner's own jobs in its warm lane (the models it has loaded) ahead
+of the owner's best job, while that job has waited less than the pick allowance (or the worker's own
+`switch_after_ms`, if that is lower). A warm lane never makes a person wait: while a person's run waits that the
+worker can take, its next claim takes the best of them, whatever lane it has loaded.
 
 **The queue's settings.** The owner sets these with `GET` and `PATCH /api/admin/queue/settings`
 ([admin-api.md](admin-api.md)). They apply at once, with no restart:
@@ -492,7 +510,7 @@ in that class came.
 |---|---|---|
 | `runCeilingS` | `{ default, lanes }`: the longest one attempt at a job may run, in seconds, with a value per lane that overrides the default. A worker's run limit is never longer, and the run's own clock is set from it (below) | `{ "default": 2700, "lanes": {} }` (45 minutes) |
 | `ownerWaitLimitS` | How long the owner's own jobs may wait before a worker first takes them, in seconds. `null`: no limit | `null` |
-| `fairShare` | Each class goes round its accounts (above). Off: strict order | `false` |
+| `fairShare` | Kept as saved; people always take turns (above), whatever it says | `false` |
 | `pickAllowanceMs` | How long a job in a worker's warm lane may go ahead of an older one (above). 0: strict order | `0` |
 | `firstPickGraceMs` | How long a job may be left for a free worker with a higher pick order before another worker takes it (see "Who picks first" below). 0: no job is left for anyone | `20000` (20 seconds) |
 | `pausedBudgetS` | How long, in all, a run that has started may spend back in line while its worker steps aside, and still be inside the deadline its hold asks for ([billing-hook.md](billing-hook.md)). A run past it still delivers its result | `7200` (2 hours) |
@@ -589,10 +607,10 @@ or hidden: it keeps its place in line and starts after the hold ends.
 
 | Mode | Order on the workers | Local work on the worker's PC |
 | --- | --- | --- |
-| `people-first` (the default) | paid runs, free runs, then the owner's own jobs | makes room for people's runs (studio jobs first) |
+| `people-first` (the default) | people's runs (in the order above), then the owner's own jobs | makes room for people's runs (studio jobs first) |
 | `people-only` | people's runs only; the owner's own jobs wait | starts nothing new |
-| `ours-first` | the owner's own jobs, then paid runs, then free runs | keeps the GPU while it runs; people's runs start when it is idle |
-| `balanced` | paid runs, then free runs and the owner's own jobs together, by when they came | makes room for people's runs |
+| `ours-first` | the owner's own jobs, then people's runs | keeps the GPU while it runs; people's runs start when it is idle |
+| `balanced` | people's runs and the owner's own jobs together: the owner takes turns as one more person | makes room for people's runs |
 
 A mode lasts 1 minute to a week (`forMin`), or until the owner switches it back. A mode past its end is gone at the next
 beat, and the admin log gets a `queue.mode.end` row (actor `system`). In `ours-first`, the beat's `claimableNow` counts
@@ -608,8 +626,8 @@ override.
 to a week. "Hold" keeps them in place until the hold ends. A run's own override wins over its person's override. The
 queue view names a person by a key (`p-` and 12 hex digits), never by an account id.
 
-The order in one look at the line: runs sent next, then boosted people's runs, then the mode's classes, each group in
-its own order (fair share included). A person's place in line (`placeInLine`, the billing service's line facts) reads
+The order in one look at the line: runs sent next, then boosted people's runs, then the mode's groups, each in its
+own order (the rounds above). A person's place in line (`placeInLine`, the billing service's line facts) reads
 the same order, with the pool's mode.
 
 **The turns folder.** A worker with a turns folder writes the mode from each beat answer (`worker.queue`) to

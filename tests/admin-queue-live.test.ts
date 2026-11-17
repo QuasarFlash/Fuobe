@@ -76,6 +76,8 @@ function task(o: { account?: string; message?: string | null } = {}): { id: stri
     graph: { "1": { class_type: "SaveImage", inputs: { filename_prefix: "x" } } },
     pool: { pools: ["pool"], account: o.account, rankAt: clock, lane: LANE, needs: { workflowId: "wf-a", files: [], packs: [], minVramBytes: 0 } },
   });
+  // Made at the test's clock (the line's 20-minute rule reads when a task came).
+  db().prepare("UPDATE relay_tasks SET created_at = ? WHERE id = ?").run(clock, t.id);
   return { id: t.id, gid };
 }
 
@@ -210,8 +212,8 @@ describe("what the workers do now", () => {
     db().prepare("UPDATE relay_tasks SET rank_at = ? WHERE id = ?").run(clock - 9 * MIN, b.id);
     // People first: the account's run ahead of the owner's own, although the owner's came first.
     expect(liveQueue(clock).queued).toEqual([
-      { task: a.id, generationId: a.gid, model: "m-test", op: "t2i", lane: LANE, laneLabel: expect.any(String), principal: "user", createdAt: clock, inLineAt: clock, rank: 1, why: "People first", code: "class", override: null, person: expect.stringMatching(/^p-[0-9a-f]{12}$/), guest: false, fit: { needGb: null, workers: [] } },
-      { task: b.id, generationId: b.gid, model: "m-test", op: "t2i", lane: LANE, laneLabel: expect.any(String), principal: "owner", createdAt: clock, inLineAt: clock - 9 * MIN, rank: 2, why: "Our work: after people's runs", code: "class", override: null, person: null, guest: false, fit: { needGb: null, workers: [] } },
+      { task: a.id, generationId: a.gid, model: "m-test", op: "t2i", lane: LANE, laneLabel: expect.any(String), principal: "user", createdAt: clock, inLineAt: clock, rank: 1, why: "First run", order: "first-run", code: "class", override: null, person: expect.stringMatching(/^p-[0-9a-f]{12}$/), guest: false, fit: { needGb: null, workers: [] } },
+      { task: b.id, generationId: b.gid, model: "m-test", op: "t2i", lane: LANE, laneLabel: expect.any(String), principal: "owner", createdAt: clock, inLineAt: clock - 9 * MIN, rank: 2, why: "Our work: after people's runs", order: "owner", code: "class", override: null, person: null, guest: false, fit: { needGb: null, workers: [] } },
     ]);
     // A worker takes the account's run first (people's runs go before the owner's own): the owner's stays in line.
     const w = worker("takes");

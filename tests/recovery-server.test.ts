@@ -115,6 +115,9 @@ beforeAll(async () => {
   a1 = session(A);
   a2 = session(A);
   b1 = session(B);
+  // Both have a finished run on the GPUs already: neither goes first in a round as a new person (the line's own order is
+  // checked in tests/pool-smart-queue.test.ts; here, the place a recovery keeps).
+  for (const id of [A, B]) db().prepare("INSERT INTO worker_jobs (at, event, task_id, generation_id, principal) VALUES (?, 'done', ?, ?, ?)").run(Date.now(), `t-${id}`, `g-${id}`, `acct:${id}`);
   settings();
   ensureRunner();
   runnerByHand();
@@ -143,6 +146,9 @@ beforeEach(async () => {
   db().prepare("UPDATE relay_tasks SET state = 'canceled' WHERE state IN ('waiting','sending','queued','running','collecting')").run();
   db().prepare("UPDATE generations SET status = 'canceled' WHERE status IN ('queued', 'running')").run();
   db().prepare("DELETE FROM pool_admissions").run();
+  // Both people count as watching their runs throughout (the checks look at one person's run and not the other's; the
+  // line's own order is checked in tests/pool-smart-queue.test.ts): here, the place a recovery keeps.
+  for (const id of [A, B]) db().prepare("INSERT INTO relay_watching (account, seen_at) VALUES (?, ?) ON CONFLICT(account) DO UPDATE SET seen_at = excluded.seen_at").run(id, Date.now() + 10 * 365 * 24 * 60 * MIN);
 });
 afterEach(() => {
   vi.useRealTimers();

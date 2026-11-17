@@ -146,6 +146,8 @@ describe("the owner's run's class", () => {
     expect(pool.ownerHandsOn(taskRow(mine.id))).toBe(true);
     expect(pool.ownerHandsOn(taskRow(job({ source: "batch" }).id))).toBe(false);
     expect(pool.ownerHandsOn(taskRow(job({ account: alice }).id))).toBe(false);
+    // (Alice's first run would go first in the round: out of the way here.)
+    db().prepare("UPDATE relay_tasks SET state = 'canceled' WHERE account = ?").run(alice);
     beat(w);
     const c = claim(w);
     expect(c?.id).toBe(mine.id);
@@ -277,10 +279,11 @@ describe("the Queue page", () => {
     const batch = job({ source: "batch", agoMs: 10 * MIN });
     const a = job({ account: alice, agoMs: MIN });
     const q = liveQueue().queued;
-    expect(q.map((x) => x.task)).toEqual([mine.id, a.id, batch.id]);
-    expect(q[0]).toMatchObject({ principal: "owner", why: "Your run", handsOn: true, person: null });
-    expect(q[1]).toMatchObject({ principal: "user", why: "People first" });
-    expect(q[1]).not.toHaveProperty("handsOn");
+    // Alice has no finished run yet: her first run goes first in the round, then the owner's hands-on run.
+    expect(q.map((x) => x.task)).toEqual([a.id, mine.id, batch.id]);
+    expect(q[1]).toMatchObject({ principal: "owner", why: "Your run · Fastest of theirs", handsOn: true, person: null });
+    expect(q[0]).toMatchObject({ principal: "user", why: "First run" });
+    expect(q[0]).not.toHaveProperty("handsOn");
     expect(q[2]).toMatchObject({ principal: "owner", why: "Our work: after people's runs" });
     expect(q[2]).not.toHaveProperty("handsOn");
   });

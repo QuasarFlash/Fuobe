@@ -861,6 +861,7 @@ export const RELAY_TABLES = `CREATE TABLE IF NOT EXISTS relay_runners (
   CREATE INDEX IF NOT EXISTS worker_jobs_at ON worker_jobs(at);
   CREATE INDEX IF NOT EXISTS worker_jobs_generation ON worker_jobs(generation_id);
   CREATE INDEX IF NOT EXISTS worker_jobs_worker ON worker_jobs(worker_id);
+  CREATE INDEX IF NOT EXISTS worker_jobs_principal ON worker_jobs(principal, event);
   CREATE TRIGGER IF NOT EXISTS worker_jobs_no_update BEFORE UPDATE ON worker_jobs BEGIN SELECT RAISE(ABORT, 'worker_jobs only grows'); END;
   CREATE TRIGGER IF NOT EXISTS worker_jobs_kept BEFORE DELETE ON worker_jobs
     WHEN OLD.at > CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${WORKER_JOBS_KEEP_MS}
@@ -1167,6 +1168,9 @@ const RELAY_COLUMNS: [string, string, string][] = [
   ["relay_workers", "available_at", "INTEGER"],
   // A run's priority within its class, from an external service (0: none; higher first: pool.ts smartLine).
   ["relay_tasks", "priority", "INTEGER NOT NULL DEFAULT 0"],
+  // One attempt of the task failed (it stalled, or ran past its run limit): it waits at the back of the line for its
+  // last try (pool.ts backInLine).
+  ["relay_tasks", "failed_once", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 declare global {

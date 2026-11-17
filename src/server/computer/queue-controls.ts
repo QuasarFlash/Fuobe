@@ -16,8 +16,8 @@ import type { WorkerRow } from "./workers";
  *   - "people-only": workers take only people's runs; the owner's own jobs wait, and local work on the PC pauses.
  *   - "ours-first": the owner's own jobs before people's runs, and local work on the PC keeps the GPU (people's runs
  *     wait in line, in their order, and start when a GPU is free).
- *   - "balanced": people's free runs and the owner's own jobs in one line by when they came (paid runs first); local
- *     work makes room for people's runs as in people-first.
+ *   - "balanced": people's runs and the owner's own jobs in one line, where the owner takes turns as one more person
+ *     (pool.ts smartLine); local work makes room for people's runs as in people-first.
  * - A run: "next" (to the front of every worker's line, or of one worker's: `worker`), or "hold" (it keeps its place
  *   and no worker takes it until the hold ends).
  * - A person (an account, or the guests' key): "boost" (their runs go first, for a while), or "hold".
@@ -539,8 +539,8 @@ export function controlWords(tc: TaskControl, base: number, mode: QueueMode, wor
   // A run sent next asks local work on a worker's PC to make room, as a person's run does (pool.ts gpuClaimableRows).
   if (tc.tier === 0) return `${o?.workerId ? `Run next on ${workerName(o.workerId) ?? "its worker"}` : "Run next"}: starts as soon as the GPU is free and local work makes room`;
   if (tc.tier === 1) return "Boosted: this person's runs first";
-  if (own && base !== 2) return mode === "ours-first" ? "Your run: after our work (Our work first)" : mode === "balanced" ? "Your run: by when it came (Balanced)" : "Your run";
+  if (own && base !== 2) return mode === "ours-first" ? "Your run: after our work (Our work first)" : mode === "balanced" ? "Your run: taking turns (Balanced)" : "Your run";
   if (mode === "ours-first") return base === 2 ? "Our work first" : "After our work (Our work first)";
-  if (mode === "balanced") return base === 0 ? "Paid run" : "Balanced: by when it came";
+  if (mode === "balanced") return base === 2 ? "Balanced: our work takes turns" : "Balanced: taking turns";
   return base === 0 ? "Paid run" : base === 1 ? "People first" : "Our work: after people's runs";
 }

@@ -5,9 +5,10 @@ import { startFakeBilling, type FakeBilling } from "./helpers/fake-billing";
 import { tempDir } from "./helpers/temp-dir";
 
 /**
- * The order of the line on this install's GPUs and its install-wide settings: people's paid runs, then their free runs,
- * then the owner's own jobs, each class in the order its jobs came; fair share and the pick allowance; the run ceiling
- * per lane on both clocks; the owner's own wait limit; and GET and PATCH /api/admin/queue/settings.
+ * The order of the line on this install's GPUs and its install-wide settings: people's runs (paid or free) taking turns,
+ * then the owner's own jobs in the order they came (the rest of the order: tests/pool-smart-queue.test.ts); the pick
+ * allowance; the run ceiling per lane on both clocks; the owner's own wait limit; and GET and PATCH
+ * /api/admin/queue/settings.
  */
 
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), connection: async () => {} }));
@@ -140,6 +141,10 @@ function lineTask(o: { account?: string; class?: "paid" | "free" | "owner"; agoM
   return t.id;
 }
 
+/** A finished run of this account on the GPUs, long ago (it no longer counts as new). */
+const finishedLongAgo = (account: string) =>
+  db().prepare("INSERT INTO worker_jobs (at, event, task_id, generation_id, principal) VALUES (?, 'done', ?, ?, ?)").run(Date.now() - 24 * 60 * MIN, `t-${account}`, `g-${account}`, `acct:${account}`);
+
 /** Every waiting task, claimed one by one by a worker that finishes each at once: the order the line serves them. */
 function served(w: { id: string }): string[] {
   const out: string[] = [];
@@ -166,14 +171,16 @@ describe("classes", () => {
     expect(served(w)).toEqual([a, b, c, owner]);
   });
 
-  it("paid runs go before free ones, and each class goes in the order its runs came", () => {
+  it("paid and free runs take turns in one line: the class orders nothing, and runs that waited 20 minutes go first", () => {
     const w = standInWorker();
     const free1 = lineTask({ account: accountId, agoMs: 30 * MIN });
     const paid1 = lineTask({ account: other, class: "paid", agoMs: 20 * MIN });
     const free2 = lineTask({ account: other, agoMs: 10 * MIN });
     const paid2 = lineTask({ account: accountId, class: "paid", agoMs: 0 });
-    expect(pool.placeInLine(rowOf(free1)).place).toBe(3);
-    expect(served(w)).toEqual([paid1, paid2, free1, free2]);
+    expect(pool.placeInLine(rowOf(free1)).place).toBe(1);
+    expect(pool.placeInLine(rowOf(paid2)).place).toBe(4);
+    // The two that waited 20 minutes or more, the oldest first; then one turn each, the one who waited longest first.
+    expect(served(w)).toEqual([free1, paid1, free2, paid2]);
   });
 
   it("a task from before classes reads as the owner's with no account and as a person's free run with one", () => {
@@ -309,6 +316,8 @@ describe("a run's later steps keep the run's place", () => {
 
   it("a chain's next step keeps the run's class and place, waits past the run's wait limit behind a long line, and still runs first", async () => {
     const w = standInWorker();
+    // (Both people have a finished run: neither goes first for a first run.)
+    finishedLongAgo(other);
     const wait = 5 * MIN;
     const first = runRow({ batch: "chain-a" });
     const one = await sendStep(first, { class: "paid", waitMs: wait });
@@ -359,6 +368,7 @@ describe("a run's later steps keep the run's place", () => {
 
   it("A5: a 3-step chain under load: each later step ranks with step 1, ahead of runs sent after it, and nothing fails after 20 minutes", async () => {
     const w = standInWorker();
+    finishedLongAgo(other);
     const wait = 5 * MIN;
     const first = runRow({ batch: "chain-e" });
     const one = await sendStep(first, { waitMs: wait });
@@ -457,18 +467,20 @@ describe("a run's later steps keep the run's place", () => {
   });
 });
 
-describe("fair share", () => {
-  it("off: strict order; on: each account's first run goes before anyone's second, counting runs it has going", () => {
+describe("taking turns", () => {
+  it("each person's first run goes before anyone's second, counting runs they have going, whatever fairShare says", () => {
     const w = standInWorker();
-    const a1 = lineTask({ account: accountId, agoMs: 30 * MIN });
-    const a2 = lineTask({ account: accountId, agoMs: 29 * MIN });
-    const a3 = lineTask({ account: accountId, agoMs: 28 * MIN });
-    const b1 = lineTask({ account: other, agoMs: 10 * MIN });
+    const a1 = lineTask({ account: accountId, agoMs: 3 * MIN });
+    const a2 = lineTask({ account: accountId, agoMs: 2.9 * MIN });
+    const a3 = lineTask({ account: accountId, agoMs: 2.8 * MIN });
+    const b1 = lineTask({ account: other, agoMs: 1 * MIN });
     const owner = lineTask({ agoMs: 60 * MIN });
-    const strict = pool.lineOrder(db().prepare("SELECT * FROM relay_tasks WHERE state = 'waiting' AND pools IS NOT NULL").all() as never, false).map((t) => t.id);
-    expect(strict).toEqual([a1, a2, a3, b1, owner]);
-    qs.saveQueueSettings({ ...qs.queueSettings(), fairShare: true });
+    const line = () => pool.lineOrder(db().prepare("SELECT * FROM relay_tasks WHERE state = 'waiting' AND pools IS NOT NULL").all() as never).map((t) => t.id);
+    expect(line()).toEqual([a1, b1, a2, a3, owner]);
     expect(pool.placeInLine(rowOf(b1)).place).toBe(2);
+    qs.saveQueueSettings({ ...qs.queueSettings(), fairShare: true });
+    expect(line()).toEqual([a1, b1, a2, a3, owner]);
+    qs.saveQueueSettings({ ...qs.queueSettings(), fairShare: false });
     expect(served(w)).toEqual([a1, b1, a2, a3, owner]);
   });
 });
@@ -484,7 +496,8 @@ describe("the pick allowance", () => {
     db().prepare("UPDATE relay_workers SET warm_lane = ? WHERE id = ?").run(lanes[1], w.id);
     expect(claimAs(w)?.id).toBe(old);
     done(old);
-    const old2 = lineTask({ account: accountId, agoMs: 5 * MIN, lane: lanes[0] });
+    // (The other person's turn now: their run in the lane it hasn't loaded came first, so it goes first.)
+    const old2 = lineTask({ account: other, agoMs: 5 * MIN, lane: lanes[0] });
     qs.saveQueueSettings({ ...qs.queueSettings(), pickAllowanceMs: 10 * MIN });
     db().prepare("UPDATE relay_workers SET warm_lane = ? WHERE id = ?").run(lanes[1], w.id);
     // A warm lane never makes a person wait: people's runs keep their order, whatever lane is loaded.

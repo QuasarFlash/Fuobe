@@ -408,6 +408,8 @@ describe("order (checks 8, 9)", () => {
     const owner2 = task({ rankAgoMs: 23 * 60 * MIN });
     const guest = task({ account: "guest", rankAgoMs: 2 * MIN });
     const person = task({ account: "acct-a", rankAgoMs: 1 * MIN });
+    // (A person with no finished run yet goes first in a round: this one has one, so the guest, who came first, goes first.)
+    db().prepare("INSERT INTO worker_jobs (at, event, task_id, generation_id, principal) VALUES (?, 'done', 't-earlier', 'g-earlier', 'acct:acct-a')").run(clock - 60 * MIN);
     const order: string[] = [];
     for (let i = 0; i < 4; i++) {
       const c = claim(w);

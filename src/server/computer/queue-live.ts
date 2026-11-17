@@ -6,7 +6,7 @@ import { laneLabel } from "@/lib/lanes";
 import { HOLDING_OTHER, HOLDING_WHY, SENT_STATES, type WorkerHolding } from "@/lib/relay";
 import { db } from "../db";
 import { loadIndex } from "../gpu/index-file";
-import { claimableNow, controlledLine, firstClaimableNow, localWorkOf, ownerHandsOn, ownerWaitingNow, runFit, workerState, type RunFit } from "./pool";
+import { claimableNow, controlledLine, firstClaimableNow, localWorkOf, ORDER_WORDS, ownerHandsOn, ownerWaitingNow, runFit, workerState, type OrderWhy, type RunFit } from "./pool";
 import { controlWords, effectiveMode, liveOverrides, MODE_WORDS, overrideView, personKey, poolMode, poolModes, recentOverrides, sweepControls, workerModeOf, type EffectiveMode, type OverrideView, type QueueMode } from "./queue-controls";
 import type { LocalWork } from "@/lib/relay";
 import { json, taskCold, taskProgress, type TaskRow, jobNowOf, type JobNow } from "./tasks";
@@ -64,8 +64,14 @@ export interface QueuedJob {
   inLineAt: number;
   /** Its place in the line its pool's workers serve (1: next); null while no worker takes it (held, People only). */
   rank: number | null;
-  /** Why it stands there, in words ("People first", "Run next", "Held by the owner"). */
+  /**
+   * Why it stands there, in words: the owner's controls ("Run next", "Held by the owner"), else the line's own reason
+   * (pool.ts ORDER_WORDS: "Watching", "Plan priority", "First run", "Fastest of theirs", "Waited 20 min", "Second try
+   * when the line is free", "Only this GPU can make it"), else its class ("Our work: after people's runs").
+   */
   why: string;
+  /** Why the line puts it there (pool.ts smartLine), whatever the controls say. */
+  order: OrderWhy;
   /** What decides it: the class's order ("class"), a run sent next ("next"), a boosted person ("boost"), or why no worker takes it now. */
   code: "class" | "next" | "boost" | "held" | "pinned" | "paused";
   /** The owner's override that decides it (null: none), with until when. */
@@ -140,6 +146,9 @@ export interface TextLine {
   running: number;
   oldestAt: number | null;
 }
+
+/** The reasons of a person's run in its turn of the line (pool.ts smartLine): only one GPU making it says more. */
+const TURN_WHYS = new Set<OrderWhy>(["watching", "priority", "first-run", "turn"]);
 
 /** At most this many next steps are listed (oldest first); `nextTotal` counts them all. */
 export const NEXT_LIMIT = 50;
@@ -229,9 +238,19 @@ export function liveQueue(now = Date.now()): { running: RunningJob[]; holding: H
   const nameOf = (id: string) => byId.get(id)?.name ?? null;
   // Each worker's state, read once for the fit of every job listed.
   const stateOf = workers.map((w) => ({ w, state: workerState(w, now) }));
-  const queued: QueuedJob[] = ordered.slice(0, QUEUED_LIMIT).map(({ task: t, rank, base, control, mode }) => {
+  const queued: QueuedJob[] = ordered.slice(0, QUEUED_LIMIT).map(({ task: t, rank, base, control, mode, order: lineWhy }) => {
     const g = genOf(t.generation_id);
     const o = control.by;
+    const fit = runFit(t, stateOf, now);
+    // A person's run in its turn that only one of the workers taking jobs now can make, while more than one is: that
+    // worker takes it first (pool.ts onlyHere).
+    const on = fit.workers.filter((x) => x.state === "idle" || x.state === "busy");
+    const order: OrderWhy = TURN_WHYS.has(lineWhy) && on.length > 1 && on.filter((x) => x.can).length === 1 ? "only-gpu" : lineWhy;
+    const words = controlWords(control, base, mode, nameOf, ownerHandsOn(t));
+    // No override decides it: the line's own reason (the mode's words too, where the mode puts our work first or with
+    // people's runs, and for the owner's hands-on run).
+    const plain = (mode === "people-first" || mode === "people-only") && !ownerHandsOn(t);
+    const why = control.out || control.tier < 2 || order === "owner" ? words : plain ? ORDER_WORDS[order] : `${words} · ${ORDER_WORDS[order]}`;
     return {
       task: t.id,
       generationId: t.generation_id,
@@ -243,13 +262,14 @@ export function liveQueue(now = Date.now()): { running: RunningJob[]; holding: H
       createdAt: g?.created_at ?? null,
       inLineAt: t.rank_at ?? t.created_at,
       rank,
-      why: controlWords(control, base, mode, nameOf, ownerHandsOn(t)),
+      why,
+      order,
       code: control.out ?? (control.tier === 0 ? "next" : control.tier === 1 ? "boost" : "class"),
       override: o ? { id: o.id, until: o.until, by: o.by, at: o.at, workerId: o.workerId } : null,
       person: t.account ? personKey(t.account) : null,
       guest: !!t.account?.startsWith("guest"),
       ...(ownerHandsOn(t) && { handsOn: true as const }),
-      fit: runFit(t, stateOf, now),
+      fit,
     };
   });
 

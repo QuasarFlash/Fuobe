@@ -246,7 +246,7 @@ answers again.
 | Call | Request | Answer |
 |---|---|---|
 | `POST /v1/quote` | `{ account: AccountFacts \| null, run: RunFacts, queue: QueueFacts \| null }` | `Quote` |
-| `POST /v1/reserve` | `{ requestId, account: AccountFacts, run: RunFacts, queue: QueueFacts \| null, shown: { amount, priceVersion }, timing?: { runMs, pausedMs, heldMs? } }` | `{ ok: true, holdId, amount, boostMs, maxWaitMs, pools?, class?, text, startAt? }` or `{ ok: false, code: RefuseCode \| "price-changed", text, quote?, action?, offer? }` |
+| `POST /v1/reserve` | `{ requestId, account: AccountFacts, run: RunFacts, queue: QueueFacts \| null, shown: { amount, priceVersion }, timing?: { runMs, pausedMs, heldMs? } }` | `{ ok: true, holdId, amount, boostMs, maxWaitMs, pools?, class?, priority?, text, startAt? }` or `{ ok: false, code: RefuseCode \| "price-changed", text, quote?, action?, offer? }` |
 | `POST /v1/release` | `{ holdId, reason: "not-created" }` or `{ requestId, reason: "not-created" }` | `{ ok: true }` |
 | `POST /v1/settle` | `{ holdId, generationId, rows, status: "succeeded", final: { outputs, megapixels, seconds }, providerUsd, gpuMs, device, reachedProvider }` | `{ ok: true, charged }` |
 | `POST /v1/refund` | `{ holdId, generationId, rows, status: "failed" \| "canceled" \| "hidden" \| "unchecked", reason, reachedProvider, gpuMs, device }` | `{ ok: true, text }` |
@@ -295,9 +295,12 @@ with the time to send its files and results. `pausedMs` is the time a started ru
 `pausedBudgetS`, two hours unless the owner sets another). A service sets the deadline to at least now + `maxWaitMs` +
 `runMs` + `pausedMs`. A run past it still delivers its result. A service that doesn't read `timing` keeps its own rule.
 
-`class` puts the run in a class of the line: `"paid"` runs go before `"free"` ones (no `class`: `"free"`). The
-install's own jobs come after both. `boostMs` is a head start inside the class, at most a day: the run stands in line as
-if it had come that much earlier. Both are kept for every row of the run, and a browser never sees them.
+`class` is the run's class: `"paid"` or `"free"` (no `class`: `"free"`). People's runs of both classes take turns in
+one line, and the install's own jobs come after them. `priority` is the run's priority within its class: a whole number
+from 0 (none, the same as no `priority`) to 9, higher first in each round of the line (a value out of range is read as
+the nearest one, anything else as 0). `boostMs` is a head start, at most a day: where two people's turns would tie, the
+run counts as having come that much earlier. All three are kept for every row of the run, and a browser never sees them.
+The order of the line is in [gpu-workers.md](gpu-workers.md).
 
 On the workers ([gpu-workers.md](gpu-workers.md)), `queue` counts the line the way the workers serve it: `ahead` is
 every task the workers that may run this one would serve first, whatever its model, and `lane` is the workflow's lane.

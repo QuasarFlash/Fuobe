@@ -8,8 +8,8 @@ import { db } from "./db";
  *   per lane that overrides it. It ends the generation's own clock and is the most a worker's run limit may be.
  * - `ownerWaitLimitS`: how long the owner's own jobs on the workers may wait in line before a worker first takes them
  *   (null: no limit). People's runs go first, so the owner's jobs can wait a long time.
- * - `fairShare`: off, the line goes strictly by class, then by when each job came. On, an account's (or the owner's)
- *   next job goes after every other account's job that came before it and is the first of its own.
+ * - `fairShare`: kept as it was saved, and read by nothing now: people always take turns in the line, one run each in
+ *   every round (src/server/computer/pool.ts smartLine).
  * - `pickAllowanceMs`: how long a job in the lane a worker has loaded may go ahead of an older one in another lane, so a
  *   worker doesn't reload its models for every job (0: strict order).
  * - `firstPickGraceMs`: how long a job may wait for a worker with a higher pick order to take it, while that worker is

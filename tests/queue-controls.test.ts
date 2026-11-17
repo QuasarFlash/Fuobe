@@ -167,13 +167,15 @@ describe("modes", () => {
     expect(served(w)).toEqual([owner.id]);
   });
 
-  it("balanced: free runs and the owner's own jobs in one line by when they came; paid runs first", () => {
+  it("balanced: people's runs and the owner's own jobs take turns in one line, the owner as one more person", () => {
     const w = worker("w1");
-    const owner = job({ agoMs: 30 * MIN });
-    const a = job({ account: alice, agoMs: 20 * MIN });
+    const owner1 = job({ agoMs: 5 * MIN });
+    const owner2 = job({ agoMs: 4 * MIN });
+    const a = job({ account: alice, agoMs: 3 * MIN });
     const paid = job({ account: bob, class: "paid", agoMs: 1 * MIN });
     setMode({ mode: "balanced", forMin: 60 });
-    expect(served(w)).toEqual([paid.id, owner.id, a.id]);
+    // Round one: Alice and Bob (no finished run yet: first) by who waited longest, then the owner; round two: the owner.
+    expect(served(w)).toEqual([a.id, paid.id, owner1.id, owner2.id]);
   });
 
   it("a worker's own mode wins over its pool's; back to normal follows the pool again", () => {
@@ -390,7 +392,8 @@ describe("the admin routes", () => {
     expect(body.controls.pools.pool.mode).toBe("people-first");
     expect(body.controls.workers).toEqual([expect.objectContaining({ name: "w1", mode: expect.objectContaining({ mode: "people-only", from: "worker" }) })]);
     expect(body.controls.modes).toHaveLength(4);
-    expect(body.queued[0]).toMatchObject({ why: "People first", person: qc.personKey(alice) });
+    // (Alice has no finished run on the GPUs yet: her first run goes first in its round.)
+    expect(body.queued[0]).toMatchObject({ why: "First run", order: "first-run", person: qc.personKey(alice) });
     expect(JSON.stringify(body)).not.toContain(alice);
   });
 });
