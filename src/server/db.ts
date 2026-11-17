@@ -719,6 +719,7 @@ export const WORKER_JOBS_KEEP_MS = 365 * 24 * 60 * 60_000;
  * the files staged for a job, under the names ComfyUI gets. worker_jobs: which worker took which task and when, and what
  * became of it (rows are only added; each is kept a year, like the admin API's log). worker_events: each worker's state
  * changes, handoffs, stages, claims, admin actions and its own log lines (worker-events.ts; pruned after 7 or 30 days).
+ * relay_watching: when an account's open page last asked about its runs (watching.ts: its runs go first in their turn).
  * Safe to run on every start.
  */
 export const RELAY_TABLES = `CREATE TABLE IF NOT EXISTS relay_runners (
@@ -864,6 +865,10 @@ export const RELAY_TABLES = `CREATE TABLE IF NOT EXISTS relay_runners (
   CREATE TRIGGER IF NOT EXISTS worker_jobs_kept BEFORE DELETE ON worker_jobs
     WHEN OLD.at > CAST(strftime('%s', 'now') AS INTEGER) * 1000 - ${WORKER_JOBS_KEEP_MS}
     BEGIN SELECT RAISE(ABORT, 'worker_jobs rows are kept a year'); END;
+  CREATE TABLE IF NOT EXISTS relay_watching (
+    account TEXT PRIMARY KEY,
+    seen_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS worker_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,

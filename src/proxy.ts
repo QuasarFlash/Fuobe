@@ -38,6 +38,7 @@ import { accountRecordExists, installRecordExists } from "@/server/records";
 import { findShare, shareGuard, shareTargetExists } from "@/server/share-access";
 import { hostedRunsOn } from "@/server/hosted-switch";
 import { authStoreFailed } from "@/server/auth-store";
+import { followsRuns, noteWatching } from "@/server/computer/watching";
 
 /**
  * Paths that work signed out: the login page and its API (and share links: openShare). Sign-up and
@@ -271,6 +272,8 @@ const notYours = () => NextResponse.json({ error: ACCOUNT_LIBRARY_MESSAGE }, { s
 
 function account(request: NextRequest, who: Account): NextResponse {
   const { pathname, search } = request.nextUrl;
+  // Its open page follows its runs (the reads it makes anyway): its runs go first in their turn on this install's GPUs.
+  if (followsRuns(request.method, pathname)) noteWatching(who.id);
   if (ownerOnly(request.method, pathname)) {
     return NextResponse.json({ error: "These settings aren't part of your account." }, { status: 403 });
   }
