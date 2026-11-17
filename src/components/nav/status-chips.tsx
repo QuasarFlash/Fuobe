@@ -17,6 +17,7 @@ import { placeholdersOn } from "@/lib/demo-mode";
 import { deviceLabel } from "@/lib/gpu/readiness";
 import { shortState } from "@/lib/diagnose";
 import { safeLink, useInterest, type BalanceRow } from "@/lib/hosted";
+import { useViewerKind } from "@/components/nav/nav-ui";
 import type { NavLink } from "@/lib/nav-link";
 import type { ViewerKind } from "@/lib/nav-model";
 import { barRuns, type BarRuns, type RunOnPick } from "@/lib/run-place";
@@ -573,22 +574,25 @@ export function BarPills({ kind }: { kind: ViewerKind | undefined }) {
 export const PILL_W = { balance: "w-40 xl:w-[184px]", computer: "w-9 xl:w-[140px]", placeholders: "w-[136px]", navlink: "w-9 min-[1440px]:w-[132px]" } as const;
 
 /**
- * The billing service's link for the bar (viewer.navLink, src/lib/nav-link.ts): a filled pill, its words from 1440 px
- * and an icon with its name for screen readers below. `wide`: the words always (the phone's You sheet).
+ * The billing service's link for the bar (viewer.navLink, src/lib/nav-link.ts): a filled pill. `bar`: its words from
+ * 1440 px, an icon with its name for screen readers below. `wide`: the words always, full width (the phone's You sheet).
+ * `phone`: the words always, 36 px tall with a 44 px tap area (the phone header, PhoneBar).
  */
-export function NavLinkPill({ link, wide, className }: { link: NavLink; wide?: boolean; className?: string }) {
+export function NavLinkPill({ link, variant = "bar", className }: { link: NavLink; variant?: "bar" | "wide" | "phone"; className?: string }) {
   return (
     <IntentLink
       href={link.url}
       title={link.label}
       className={cn(
-        "nav-focus-out inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-2 text-[13px] font-semibold whitespace-nowrap text-primary-foreground nav-hover:bg-primary/90 active:bg-primary/85 motion-safe:transition-colors [@media(pointer:coarse)]:h-11",
-        wide ? "w-full px-4" : "min-[1440px]:px-3.5",
+        "nav-focus-out inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-2 text-[13px] font-semibold whitespace-nowrap text-primary-foreground nav-hover:bg-primary/90 active:bg-primary/85 motion-safe:transition-colors",
+        variant === "bar" && "min-[1440px]:px-3.5 [@media(pointer:coarse)]:h-11",
+        variant === "wide" && "w-full px-4 [@media(pointer:coarse)]:h-11",
+        variant === "phone" && "relative pr-3.5 pl-2.5 text-[12.5px] shadow-[0_2px_10px_color-mix(in_oklch,var(--primary)_28%,transparent)] after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']",
         className,
       )}
     >
       <Sparkles aria-hidden className="size-4 shrink-0" />
-      <span className={cn("truncate", !wide && "sr-only min-[1440px]:not-sr-only")}>{link.label}</span>
+      <span className={cn("truncate", variant === "bar" && "sr-only min-[1440px]:not-sr-only")}>{link.label}</span>
     </IntentLink>
   );
 }
@@ -596,5 +600,17 @@ export function NavLinkPill({ link, wide, className }: { link: NavLink; wide?: b
 /** The service's link first in the phone's You sheet, when it sent one. */
 export function NavLinkBlock() {
   const link = useShownStatus()?.viewer?.navLink;
-  return link ? <NavLinkPill link={link} wide /> : null;
+  return link ? <NavLinkPill link={link} variant="wide" /> : null;
+}
+
+/**
+ * The service's link in the phone header (PhoneBar: Home, the galleries, settings), left of search. Its room is kept
+ * from the first paint when this browser showed it last (html[data-had-navlink], remembered by the bar's pills).
+ */
+export function PhoneNavLink() {
+  const status = useShownStatus();
+  const kind = useViewerKind();
+  const link = status?.viewer?.navLink;
+  if (!status || !kind) return <span aria-hidden className="hidden h-9 w-[124px] [html[data-had-navlink]_&]:block" />;
+  return link ? <NavLinkPill link={link} variant="phone" /> : null;
 }

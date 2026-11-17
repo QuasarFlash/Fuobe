@@ -3,6 +3,7 @@
 import { Search } from "lucide-react";
 import { IntentLink } from "@/components/intent-link";
 import { PhoneNavButton } from "@/components/nav/phone-nav-button";
+import { PhoneNavLink } from "@/components/nav/status-chips";
 import { useSearchPalette } from "@/components/nav/search-context";
 import { UpdateAvailable } from "@/components/update-available";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export function PhoneBar({ className }: { className?: string }) {
       </IntentLink>
       <div className="ml-auto flex items-center gap-1.5">
         <UpdateAvailable />
+        <PhoneNavLink />
         <PhoneNavButton />
       </div>
     </div>
