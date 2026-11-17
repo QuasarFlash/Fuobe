@@ -937,20 +937,23 @@ describe("a worker's own reports: giving a job back, its execution time, the inp
     expect((await late.say({ event: "passes", running: false, entries: Array.from({ length: META_BATCH_HISTORY + 1 }, (_, i) => pass(i)) })).status).toBe(400);
   });
 
-  it("a job given back goes back in line with its place, counts as an attempt, and the third time fails in plain words", async () => {
+  it("a job given back goes back in line with its place and counts as an attempt; a failed attempt goes to the back, and a second one fails it in plain words", async () => {
     clock = Date.now();
     const id = task();
     const rank = state(id).rank_at;
     const w = worker("gives-back");
+    // The worker can't make its clips again (a recovery), then it stalls (its attempt failed), then it runs past its run
+    // limit (a second failed attempt).
+    const whys = ["media", "stalled", "run-limit"] as const;
     for (let i = 1; i <= 3; i++) {
       const { t, say } = await routed(w, id);
       expect(t.attempt).toBe(i);
       expect((await say({ event: "sent", promptId: t.promptId })).status).toBe(200);
-      const back = await say({ event: "give-back", why: i === 1 ? "stalled" : i === 2 ? "run-limit" : "media" });
+      const back = await say({ event: "give-back", why: whys[i - 1] });
       expect(back.status).toBe(200);
       if (i < 3) {
         expect(back.body.state).toBe("waiting");
-        expect(state(id)).toMatchObject({ state: "waiting", requeues: i, rank_at: rank, worker_id: null });
+        expect(state(id)).toMatchObject({ state: "waiting", requeues: i, rank_at: rank, worker_id: null, failed_once: i === 1 ? 0 : 1 });
         expect(JSON.parse(state(id).tried_json ?? "[]")).toEqual([w.id]);
       } else {
         expect(back.body.state).toBe("failed");
@@ -1076,14 +1079,22 @@ describe("a worker's own reports: giving a job back, its execution time, the inp
     const back = await second.say({ event: "give-back", why: "run-limit" });
     expect(back.body.state).toBe("failed");
     expect(state(id)).toMatchObject({ state: "failed", error: pool.GAVE_BACK_WORDS, requeues: 2 });
-    // Other reasons still have three tries: a stall after one run-limit goes back in line.
+    // A stall after one run-limit is a second failed attempt too: it fails.
     const id2 = task();
     const third = await routed(w, id2);
     await third.say({ event: "sent", promptId: third.t.promptId });
     await third.say({ event: "give-back", why: "run-limit" });
     const fourth = await routed(w, id2);
     await fourth.say({ event: "sent", promptId: fourth.t.promptId });
-    expect((await fourth.say({ event: "give-back", why: "stalled" })).body.state).toBe("waiting");
+    expect((await fourth.say({ event: "give-back", why: "stalled" })).body.state).toBe("failed");
+    // A worker that can't make the clips again is a recovery: after one run-limit, it goes back in line.
+    const id3 = task();
+    const fifth = await routed(w, id3);
+    await fifth.say({ event: "sent", promptId: fifth.t.promptId });
+    await fifth.say({ event: "give-back", why: "run-limit" });
+    const sixth = await routed(w, id3);
+    await sixth.say({ event: "sent", promptId: sixth.t.promptId });
+    expect((await sixth.say({ event: "give-back", why: "media" })).body.state).toBe("waiting");
   });
 
   it("results kept from an earlier try go up without running again, keep their own time, and add no time to the lane", async () => {

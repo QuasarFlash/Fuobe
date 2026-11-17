@@ -173,6 +173,14 @@ function served(w: { id: string }): string[] {
   }
 }
 
+/** A worker's attempt at a task fails: it gives the job back as stalled. */
+function failAttempt(w: { id: string }, id: string) {
+  const c = claimAs(w)!;
+  expect(c.id).toBe(id);
+  tasks.report(rowOf(id), { event: "sent", promptId: c.promptId }, () => ({ error: "unused" }));
+  tasks.report(rowOf(id), { event: "give-back", why: "stalled" }, () => ({ error: "unused" }));
+}
+
 describe("rounds over people", () => {
   it("in each round: watching, then by priority, then a first run, then everyone else", () => {
     const w = standInWorker();
@@ -280,6 +288,58 @@ describe("waiting 20 minutes", () => {
   });
 });
 
+describe("a run that failed once", () => {
+  it("goes to the very back, waits while another person's run waits that a worker could take, then has one more try; a second failure fails it", () => {
+    const w = standInWorker();
+    const [A, B, C] = [person("a"), person("b"), person("c")];
+    // (It came 25 minutes ago: a run that failed once stays at the back, however long it waited.)
+    const a = lineTask({ account: A, agoMs: 25 * MIN });
+    failAttempt(w, a);
+    expect(rowOf(a)).toMatchObject({ state: "waiting", failed_once: 1, requeues: 1 });
+    // Another person's run, one no worker can make (it waits for a worker that isn't there), and the owner's own job.
+    const b = lineTask({ account: B, agoMs: 1 * MIN });
+    const c = lineTask({ account: C, agoMs: 2 * MIN });
+    db().prepare("UPDATE relay_tasks SET only_worker = 'not-here' WHERE id = ?").run(c);
+    const owner = lineTask({ agoMs: 60 * MIN });
+    expect(line()).toEqual([c, b, a, owner]);
+    expect(pool.placeInLine(rowOf(a)).place).toBe(2);
+    // B's run goes first; A's last try waits for it.
+    expect(claimAs(w)?.id).toBe(b);
+    done(b);
+    // The line is free now (C's run no worker can make, and the owner's own job, don't count): A's last try.
+    const again = claimAs(w)!;
+    expect(again.id).toBe(a);
+    expect(again.attempt).toBe(2);
+    tasks.report(rowOf(a), { event: "sent", promptId: again.promptId }, () => ({ error: "unused" }));
+    tasks.report(rowOf(a), { event: "give-back", why: "stalled" }, () => ({ error: "unused" }));
+    expect(rowOf(a)).toMatchObject({ state: "failed", error: pool.GAVE_BACK_WORDS });
+    expect(claimAs(w)?.id).toBe(owner);
+  });
+
+  it("waits for a run another worker could take, even one this worker can't make", () => {
+    const big = standInWorker("big");
+    const small = standInWorker("small", { lanes: [SLOW] });
+    const [A, B] = [person("a"), person("b")];
+    const a = lineTask({ account: A, agoMs: 5 * MIN, lane: QUICK });
+    failAttempt(big, a);
+    // Only the small worker allows SLOW... and the big one too: keep it to the small one alone.
+    pool.patchWorker(big.id, { allow: { [QUICK]: { delayMs: 0 } } });
+    const b = lineTask({ account: B, agoMs: 1 * MIN, lane: SLOW });
+    // The big worker can't make B's run, but the small one can: A's last try waits.
+    expect(claimAs(big)).toBeNull();
+    expect(claimAs(small)?.id).toBe(b);
+    expect(claimAs(big)?.id).toBe(a);
+  });
+
+  it("a second failure of a person's run on the workers fails the run with the plain words, as before", () => {
+    const w = standInWorker();
+    const a = lineTask({ account: person("a") });
+    failAttempt(w, a);
+    failAttempt(w, a);
+    expect(rowOf(a)).toMatchObject({ state: "failed", error: pool.GAVE_BACK_WORDS, requeues: 2 });
+  });
+});
+
 describe("recoveries", () => {
   it("keep their place: a worker that went silent, and a run given back for memory, wait where they were, with nothing failed", () => {
     const w = standInWorker();
@@ -335,6 +395,17 @@ describe("best GPU for the job", () => {
 });
 
 describe("the owner's own jobs and the owner's controls", () => {
+  it("the owner's own jobs go after every person's run, a run that failed once included", () => {
+    const w = standInWorker();
+    const [A, B] = [person("a"), person("b")];
+    const owner = lineTask({ agoMs: 60 * MIN });
+    const f = lineTask({ account: A, agoMs: 2 * MIN });
+    failAttempt(w, f);
+    const p = lineTask({ account: B });
+    expect(line()).toEqual([p, f, owner]);
+    expect(served(w)).toEqual([p, f, owner]);
+  });
+
   it("runs sent next, boosted people and holds still work on top of the order", () => {
     const w = standInWorker();
     const [W, E] = [person("watcher"), person("else")];

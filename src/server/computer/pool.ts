@@ -68,7 +68,11 @@ export const UPDATING_WORDS = "Updating to the new version · back in about a mi
 export const MODELS_NOT_READY = "models-not-ready";
 /** A task avoids workers that lost or failed it, unless no other worker that can run it beat this recently. */
 export const RETRY_WINDOW_MS = 10 * 60_000;
-/** Attempts in all before a task fails. */
+/**
+ * Lost attempts in all before a task fails (its worker went silent, its ComfyUI went down or lost it: recoveries, which
+ * keep the task's place). A failed attempt (it stalled, or ran past its run limit) has one more try at the back of the
+ * line instead (backInLine).
+ */
 export const MAX_ATTEMPTS = 3;
 /** A worker that beat this recently may claim. */
 const FRESH_BEAT_MS = 30_000;
@@ -685,7 +689,9 @@ function gpuClaimableRows(w: WorkerRow, now: number, whose: "people" | "owner"):
       ? `(${CLASS_RANK} <> ${OWNER_CLASS} OR generation_id IN (SELECT value FROM json_each(?)))`
       : `${CLASS_RANK} = ${OWNER_CLASS} AND generation_id NOT IN (SELECT value FROM json_each(?))`;
   const rows = lineRows(LINE_COLS, `pools IS NOT NULL AND state = 'waiting' AND stop = 0 AND ${byClass} AND INSTR(',' || pools || ',', ?) > 0 ${slotWhere(w, "gpu")}`, [sentNext, `,${w.pool},`], c, LOOK_AT);
-  const able = rows.filter((t) => fitsSlot(t, w, now, "gpu") && retryOk(t, w, now) && beforeWindowEnds(t, w, now));
+  // A run that failed once counts only when the line is free for its last try (secondTryGate).
+  const second = secondTryGate(w.pool, slotWhere(w, "gpu"), c, now);
+  const able = rows.filter((t) => fitsSlot(t, w, now, "gpu") && retryOk(t, w, now) && beforeWindowEnds(t, w, now) && second(t));
   // A job left for a free worker that picks first is not this worker's to take for now: its PC makes no room for it.
   const left = able.length ? firstPicks(w, now) : null;
   const fit = left?.size ? able.filter((t) => !left.has(t.id)) : able;
@@ -1241,7 +1247,8 @@ function beforeWindowEnds(t: TaskRow, w: WorkerRow, now: number): boolean {
 /**
  * The best task this worker may run, in the line's order for it (smartLine, with its own estimates). People's runs
  * always come first, and a warm lane never makes a person wait: while any person's run waits that this worker can take,
- * it takes the best of them. Best GPU for the job: a run only this worker can make now goes before the others (onlyHere), so a big GPU doesn't take
+ * it takes the best of them. A run that failed once has its last try only when the line is free (secondTryGate). Best
+ * GPU for the job: a run only this worker can make now goes before the others (onlyHere), so a big GPU doesn't take
  * what a smaller one could while a run only it can make waits. Only among the owner's own jobs may one in the lane it
  * has loaded go ahead of the best one, while the best one has waited less than the pick allowance (the install's
  * setting, capped by this worker's switch_after_ms; 0: strict order). `leave`: the tasks it leaves for a worker that
@@ -1254,8 +1261,9 @@ function pick(w: WorkerRow, now: number, slot: WorkerSlot = "gpu", leave?: Reado
   // Each slot looks only at its own tasks.
   const rows = lineRows("*", `pools IS NOT NULL AND state = 'waiting' AND stop = 0 AND INSTR(',' || pools || ',', ?) > 0 ${slotWhere(w, slot)}`, [`,${w.pool},`], c, LOOK_AT);
   const looked = rows.length;
+  const second = secondTryGate(w.pool, slotWhere(w, slot), c, now);
   const ok = controlledOrder(rows, c, { now, worker: w, workers: [w] }).filter(
-    (t) => !leave?.has(t.id) && fitsSlot(t, w, now, slot) && retryOk(t, w, now) && beforeWindowEnds(t, w, now) && (!also || also(t)),
+    (t) => !leave?.has(t.id) && fitsSlot(t, w, now, slot) && retryOk(t, w, now) && beforeWindowEnds(t, w, now) && (!also || also(t)) && second(t),
   );
   if (!ok.length) return { task: null, looked };
   const only = slot === "gpu" ? onlyHere(w, ok, c, now) : null;
@@ -1450,7 +1458,7 @@ function finishedOnce(accounts: string[]): Set<string> {
  *    (higher first), then a person with no finished run yet, then everyone else, and at each level the person who has
  *    waited longest (their run that has stood in line longest). A person's turns already taken count: the runs a worker
  *    holds for them now, those it finished since the oldest run still waiting came, and their runs in step 1.
- * 3. Runs that failed once, in the order they came.
+ * 3. Runs that failed once, in the order they came: their last try comes only when the line is free (secondTryGate).
  *
  * The owner's own jobs (a group of their own, unless Balanced) go in the order they came, failed once last.
  */
@@ -1516,6 +1524,31 @@ export function lineOrder(rows: readonly TaskRow[], mode: QueueMode = DEFAULT_MO
 }
 
 /**
+ * May a task that failed once have its last try now (the other tasks always may)? Only when no other task waits in
+ * its pool, for the same slot, in a group the line serves before it or with it (for a person's run: another person's
+ * run, never the owner's own jobs), that the owner's controls let a worker take, that failed no try, and that a worker of
+ * the pool on now could run (its delays aside). Read once for each look, and only when a task that failed once is asked
+ * about.
+ */
+function secondTryGate(pool: string, slotSql: string, c: LineControls, now: number): (t: Pick<TaskRow, "failed_once" | "class" | "account">) => boolean {
+  let first: number | undefined;
+  return (t) => {
+    if (!t.failed_once) return true;
+    if (first === undefined) {
+      first = Infinity;
+      const rows = lineRows(LINE_COLS, `pools IS NOT NULL AND state = 'waiting' AND stop = 0 AND failed_once = 0 AND INSTR(',' || pools || ',', ?) > 0 ${slotSql}`, [`,${pool},`], c, LOOK_AT);
+      const on = poolWorkers().filter((x) => x.pool === pool && eligible(x, now));
+      for (const r of rows) {
+        const g = groupOf(r, c.mode);
+        if (g >= first || taskControl(r, classRank(r), c, null).out) continue;
+        if (on.some((x) => fitsSlot({ ...r, created_at: 0 }, x, now, slotFor(r, x)))) first = g;
+      }
+    }
+    return groupOf(t, c.mode) < first;
+  };
+}
+
+/**
  * The first of these tasks (a worker's line, in its order) that only this worker can make now: no other worker of its
  * pool that is on now (eligible) could run it, its delays aside. Only in the same tier of the owner's controls and the
  * same group of the line as the first task, and never a second try. Null: none, or it is the first task already.
@@ -1540,9 +1573,11 @@ function onlyHere(w: WorkerRow, ok: readonly TaskRow[], c: LineControls, now: nu
 // Back in line, and the clocks
 
 /**
- * A task goes back in line: its worker let it go (`blame: false`: a pause, at no cost to anyone) or lost it (silent,
- * its ComfyUI down: the worker is noted in tried_json and it counts as an attempt). The third lost attempt fails it.
- * The old worker's lease stops working, so its late calls get 409.
+ * A task goes back in line: its worker let it go (`blame: false`: a pause, at no cost to anyone), lost it (silent,
+ * its ComfyUI down: the worker is noted in tried_json and it counts as an attempt; a recovery, which keeps its place),
+ * or its attempt failed (`failed`: it stalled, or ran past its run limit). The third lost attempt fails it. A failed
+ * attempt sends it to the back of the line (failed_once), where it has one more try once the line is free
+ * (secondTryGate); a second failed attempt fails it. The old worker's lease stops working, so its late calls get 409.
  *
  * Only the task as `t` read it: one that has moved on since (another app process put it back in line, or a worker took
  * it again with a new lease) stays as it is now, and no attempt is counted. Returns whether it changed.
@@ -1566,18 +1601,22 @@ const OWNER_STOP_WORDS = {
   other: "The GPUs couldn't finish this run. Press Retry.",
 };
 
-export function backInLine(t: TaskRow, o: { blame: boolean; why?: string; whyKind?: "silent" | "down" | "stuck"; last?: boolean; lostAt?: number; sentBack?: string }): boolean {
+export function backInLine(t: TaskRow, o: { blame: boolean; failed?: boolean; why?: string; whyKind?: "silent" | "down" | "stuck"; last?: boolean; lostAt?: number; sentBack?: string }): boolean {
   const d = db();
   return d.transaction((): boolean => {
     const now = taskById(t.id);
     if (!now || now.state !== t.state || now.worker_id !== t.worker_id || now.lease_hash !== t.lease_hash || now.requeues !== t.requeues) return false;
     const tried = json<string[]>(t.tried_json, []);
-    const requeues = t.requeues + (o.blame ? 1 : 0);
-    if (o.blame && (requeues >= MAX_ATTEMPTS || o.last)) {
+    const blame = o.blame || !!o.failed;
+    const requeues = t.requeues + (blame ? 1 : 0);
+    // A failed attempt ends it when one failed before; a lost one when it was the last of MAX_ATTEMPTS.
+    const spent = o.failed ? !!t.failed_once : requeues >= MAX_ATTEMPTS;
+    if (blame && (spent || o.last)) {
       endTask(t.id, "failed", { error: o.why ?? stoppedWords(o.whyKind ?? "other", requeues), requeues, tried_json: JSON.stringify([...new Set([...tried, t.worker_id ?? ""])].filter(Boolean)) }, true);
       return true;
     }
-    if (t.worker_id) logWorkerJob("requeued", t, t.worker_id, Date.now(), {}, { ...(o.sentBack && { why: o.sentBack }), tries: requeues });
+    const sentBack = o.failed && o.sentBack ? `${o.sentBack} (its last try waits until the line is free)` : o.sentBack;
+    if (t.worker_id) logWorkerJob("requeued", t, t.worker_id, Date.now(), {}, { ...(sentBack && { why: sentBack }), tries: requeues });
     // A live worker that let it go hears the stop in its beat answer; one that went silent finds its lease gone when it
     // comes back (409), and takes the prompt off its own ComfyUI. It keeps its rank, so it keeps its place in line, and
     // its wait limit no longer applies (a worker took it once).
@@ -1592,7 +1631,9 @@ export function backInLine(t: TaskRow, o: { blame: boolean; why?: string; whyKin
       down_at: null,
       down_why: null,
       note: "resent",
-      ...(o.blame && t.worker_id && { tried_json: JSON.stringify([...new Set([...tried, t.worker_id])]) }),
+      ...(blame && t.worker_id && { tried_json: JSON.stringify([...new Set([...tried, t.worker_id])]) }),
+      // Failed once: at the back of the line, for its last try (smartLine, secondTryGate).
+      ...(o.failed && { failed_once: 1 }),
       // Lost because its worker went quiet: noted, so a sleep the worker reports later takes the blame back (forgiveSleep).
       ...(o.lostAt && t.worker_id && { extra_json: JSON.stringify({ ...json<Record<string, unknown>>(t.extra_json, {}), lost: { worker: t.worker_id, at: o.lostAt } }) }),
     });
@@ -1708,10 +1749,11 @@ const refusalKey = (w: Pick<WorkerRow, "id" | "catalog_version" | "ceiling_json"
 const runLimitedOf = (t: TaskRow) => json<{ runLimited?: boolean }>(t.extra_json, {}).runLimited === true;
 
 /**
- * A worker gives its task back (it stalled, ran past its run limit, or takes clips or sound the worker can't make
- * again): it goes back in line with its place kept, and counts as an attempt, so another worker that can run it is
- * preferred and the third time fails it. Past its run limit a second time (that try had the whole run ceiling), it
- * fails at once: one more try would only hold a GPU as long again.
+ * A worker gives its task back. It stalled, or ran past its run limit: its attempt failed, so it goes to the back of the
+ * line (backInLine `failed`), and has its last try once no other run waits that a worker could take; a second failed
+ * attempt fails it (past its run limit a second time, that try had the whole run ceiling: one more would only hold a GPU
+ * as long again). It takes clips or sound the worker can't make again: a recovery, with its place kept, counted as an
+ * attempt, so another worker that can run it is preferred and the third time fails it.
  */
 setPoolGiveBack((t, why) => {
   // A job ticket the worker refused before running it (built from another catalog, or more than its PC allows): back in
@@ -1739,10 +1781,10 @@ setPoolGiveBack((t, why) => {
   // The worker's own check failed before the run (it pauses itself): back in line with its place kept, at no cost.
   if (why === "self-check") return void backInLine(t, { blame: false, sentBack });
   if (why === "run-limit") {
-    if (runLimitedOf(t)) return backInLine(t, { blame: true, why: GAVE_BACK_WORDS, last: true, sentBack });
+    if (runLimitedOf(t)) return backInLine(t, { blame: true, failed: true, why: GAVE_BACK_WORDS, last: true, sentBack });
     setTask(t.id, { extra_json: JSON.stringify({ ...json<Record<string, unknown>>(t.extra_json, {}), runLimited: true }) });
   }
-  backInLine(t, { blame: true, why: GAVE_BACK_WORDS, sentBack });
+  backInLine(t, { blame: true, failed: why === "stalled" || why === "run-limit", why: GAVE_BACK_WORDS, sentBack });
 });
 
 /**

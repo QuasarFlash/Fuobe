@@ -652,9 +652,10 @@ describe("an account's run that a worker can't finish", () => {
   /** Each case, how it ends, and its words for the account (the failure sentence unless it is about the person's files). */
   const cases: [string, (w: ReturnType<typeof workerApi>, taskId: string) => Promise<void>, string?][] = [
     [
-      "given back three times (it stalled)",
+      // A failed attempt has one more try (at the back of the line, which is free here); the second fails the run.
+      "given back twice (it stalled)",
       async (w) => {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 2; i++) {
           const t = (await w.claim())!;
           await w.report(t, { event: "sent", promptId: t.promptId });
           await w.report(t, { event: "give-back", why: "stalled" });
