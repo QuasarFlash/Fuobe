@@ -478,16 +478,25 @@ type Size = { width: number; height: number };
 const megapixelsOf = (s: Size) => Math.round((s.width * s.height) / 10_000) / 100;
 const positive = (v: unknown): number | null => ((typeof v === "number" || typeof v === "string") && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
 
+/** The header of a request's input clip (inputs.video, else its first clip); null when there is none or it can't be read. */
+function clipInfo(req: GenerationRequest) {
+  const clip = req.inputs?.video ?? req.inputs?.videos?.[0];
+  return clip ? (storedMedia(clip)?.info ?? null) : null;
+}
+
+/** The size of a request's input clip, from its file's header; null when it can't be read. */
+function clipSize(req: GenerationRequest): Size | null {
+  const info = clipInfo(req);
+  return info?.width && info.height ? { width: info.width, height: info.height } : null;
+}
+
 /** The size of a request's first input picture (else clip), from its file's header; null when it can't be read. */
 function inputSize(req: GenerationRequest): Size | null {
   const i = req.inputs ?? {};
   const picture = i.images?.[0] ?? i.endImage;
   const head = picture ? localHead(picture) : null;
   const still = head ? imageSize(head) : null;
-  if (still) return still;
-  const clip = i.video ?? i.videos?.[0];
-  const info = clip ? storedMedia(clip)?.info : null;
-  return info?.width && info.height ? { width: info.width, height: info.height } : null;
+  return still ?? clipSize(req);
 }
 
 /** An upscale model's own factor, from its file's name (RealESRGAN_x4plus, 4x-UltraSharp: 4). */
@@ -523,7 +532,9 @@ function workflowSize(req: GenerationRequest, endpoint: string, modelId: string)
   };
   const maxW = Number(manifest.limits?.maxWidth ?? Infinity);
   const maxH = Number(manifest.limits?.maxHeight ?? Infinity);
-  const src = inputSize(req);
+  // Motion transfer crops its driving clip to the canvas, so the canvas takes the clip's shape (comfy-compose.ts followDriver).
+  const driver = req.op === "motion-transfer" && b.video ? clipSize(req) : null;
+  const src = driver ?? inputSize(req);
   if (b.width && b.height) {
     const [w, h] = [positive(extra.width), positive(extra.height)];
     if (w && h) return fitCanvas(w, h, manifest.limits);
@@ -531,7 +542,7 @@ function workflowSize(req: GenerationRequest, endpoint: string, modelId: string)
     const asked = req.params?.aspectRatio ?? model?.defaults?.aspectRatio;
     const h3 = isH3Graph(manifest.id);
     // "auto" (or H3 from a still) keeps the input's shape when its header says it.
-    const follows = !asked || asked === "auto" || (h3 && !!b.image);
+    const follows = !asked || asked === "auto" || (h3 && !!b.image) || !!driver;
     const shape = follows && src ? `${src.width}:${src.height}` : asked === "auto" ? undefined : asked;
     if (h3) return h3Canvas(shape);
     // The canvas the composer binds (its trained size, comfy.ts workflowCanvas); a crop after it makes the saved picture smaller.
@@ -602,6 +613,97 @@ export function genjutsuSize(req: GenerationRequest): { seconds: number | null; 
 }
 
 /**
+ * Operations whose result is as long as the clip they follow (or the part of it a range keeps): the edits, swaps and
+ * transfers of a clip, and the tools that copy, convert or enlarge one. A talking avatar is as long as its voice.
+ */
+const CLIP_LENGTH_OPS: ReadonlySet<string> = new Set([
+  "v2v",
+  "motion-transfer",
+  "video-swap",
+  "video-insert",
+  "remove-object",
+  "group-swap",
+  "scene-edit",
+  "face-fix-video",
+  "picture-video",
+  "tone-video",
+  "lipsync",
+  "dub",
+  "relight-video",
+  "restore-video",
+  "reframe",
+  "color-match",
+  "captions",
+  "mux",
+  "composite",
+  "bg-remove-video",
+  "depth-video",
+  "body-capture-video",
+  "upscale-video",
+  "interpolate",
+  "sdr-to-hdr",
+  "export-video",
+  "trim",
+]);
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * The seconds a run makes whose result follows its input clip (CLIP_LENGTH_OPS) or, for a talking avatar or lip re-sync
+ * that follows its voice, the voice, as the run reads it: the length the request states for its clip (params.sourceDuration: a studio's part, the composer's
+ * read of the upload), else the header of the uploaded file, as the GPUs' own job size reads it; within the range the
+ * request keeps where the run cuts one (params.startTime / endTime); slow motion stretched by its factor. A length the
+ * request asks for wins where the run makes that length. Undefined for any other run, null when the clip's length can't be
+ * read.
+ */
+export function clipRunSeconds(
+  req: GenerationRequest,
+  op: string,
+  run: { modelId: string; providerId: string; workflow?: string | null },
+): number | null | undefined {
+  if (op !== "avatar" && !CLIP_LENGTH_OPS.has(op)) return undefined;
+  const params: NonNullable<GenerationRequest["params"]> = req.params ?? {};
+  // Does the run make the length or range its request names? On ComfyUI, a graph that binds them; on a hosted route, a
+  // model with lengths to pick, or a route that sends them.
+  const model = getModel(run.modelId);
+  let binds: (key: string) => boolean;
+  if (run.providerId === "comfyui") {
+    let bindings: Record<string, unknown> = {};
+    try {
+      bindings = run.workflow && !run.workflow.includes("{") ? ((getWorkflow(run.workflow).manifest.bindings ?? {}) as Record<string, unknown>) : {};
+    } catch {
+      bindings = {};
+    }
+    binds = (key) => !!bindings[key];
+  } else {
+    const maps = (model?.routes ?? []).filter((r) => r.op === op).map((r) => (r.map ?? {}) as Record<string, unknown>);
+    binds = (key) => maps.some((m) => !!m[key]);
+  }
+  const asked = positive(params.duration);
+  const lengths = run.providerId !== "comfyui" && !!model?.options.durations?.length;
+  if (asked && (lengths || binds("duration") || binds("numFrames") || binds("frames"))) return asked;
+  // A talking avatar, and lip re-sync with no clip or on a graph that counts its frames, run as long as the voice
+  // (comfy-compose.ts voiceLength); the length the request states is the voice's only for an avatar or with no clip.
+  const voice = op === "avatar" || (op === "lipsync" && (!req.inputs?.video || (run.providerId === "comfyui" && binds("frames"))));
+  let length = voice && req.inputs?.video ? null : positive(params.sourceDuration);
+  if (!length) {
+    const file = voice ? (req.inputs?.audio ?? req.inputs?.voiceAudio) : (req.inputs?.video ?? req.inputs?.videos?.[0]);
+    const info = file ? storedMedia(file)?.info : null;
+    length = positive(voice ? info?.duration : (info?.videoDuration ?? info?.duration));
+  }
+  if (!length) return asked ?? null;
+  if (voice) return r3(length);
+  // The part a range keeps: a trim's, or a graph or route that cuts the clip there.
+  if (op === "trim" || binds("startTime") || binds("startFrame")) {
+    const start = Math.min(length, Math.max(0, Number(params.startTime) || 0));
+    const end = positive(params.endTime);
+    length = Math.max(0, Math.min(length, end ?? length) - start);
+  }
+  if (op === "interpolate") length *= Math.max(1, Number(params.slowdown) || 1);
+  return length > 0 ? r3(length) : null;
+}
+
+/**
  * A run's own step, then the other steps it makes beside it (a 2K take's finish), each model and operation once with its
  * count: the shape of RunFacts.steps.
  */
@@ -640,8 +742,10 @@ export function runFacts(
   // The graph an open-engine run resolves to, its options' variant picked as the pre-flight and the provider pick it.
   const graphs = p.model.engine === "open" && p.providerId === "comfyui" && endpoint ? loadIndex().workflows : null;
   const workflow = graphs && endpoint ? requestWorkflowId(endpoint, req, { op: p.op, gpu: p.gpu ?? undefined, h3: p.h3 ?? undefined, has: (id) => !!graphs[id] }).id : null;
-  // A Genjutsu run states its own length and canvas (genjutsuSize); every other run, as its request and workflow say.
+  // A Genjutsu run states its own length and canvas (genjutsuSize); a run that follows a clip (or a voice) is as long as
+  // it (clipRunSeconds); every other run, as its request and workflow say.
   const genjutsu = genjutsuSize(req);
+  const clip = genjutsu?.seconds ? undefined : clipRunSeconds(req, p.op || req.op || "", { modelId: p.model.id, providerId: p.providerId, workflow: workflow ?? endpoint });
   return {
     place: "pool",
     model: p.model.id,
@@ -655,7 +759,7 @@ export function runFacts(
     jobs: p.jobs,
     outputsPerJob: p.jobs > 0 ? Math.max(1, Math.round(p.outputs / p.jobs)) : 1,
     megapixels: genjutsu?.megapixels ?? requestMegapixels(req, kind, p.model.id, p.providerId === "comfyui" ? endpoint : undefined),
-    seconds: genjutsu?.seconds ?? req.params?.duration ?? (kind === "video" ? (model?.defaults?.duration ?? null) : null),
+    seconds: genjutsu?.seconds ?? (clip !== undefined ? clip : (req.params?.duration ?? (kind === "video" ? (model?.defaults?.duration ?? null) : null))),
     fps: req.params?.fps ?? null,
     loras: p.loras.applied.length,
     inputs: inputCounts(req),
