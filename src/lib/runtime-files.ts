@@ -70,6 +70,33 @@ export function runtimeNeeds(names: readonly string[], index: Pick<RequirementIn
   return { files: [...out.values()], unknown };
 }
 
+/**
+ * The optional files of a workflow that this run's graph loads (an opt-in Prompt helper's model when it is on, a decoder or
+ * a card's own transformer an option picks), as a worker must have them: only a worker that verified each one takes the
+ * task, as for a run-time file. A worker checks every file a graph loads, so one without them would refuse the job.
+ */
+export function graphOptionalNeeds(
+  graph: Record<string, { class_type?: unknown; inputs?: Record<string, unknown> } | null | undefined>,
+  index: Pick<RequirementIndex, "files" | "workflows">,
+  workflowId: string,
+): FileNeed[] {
+  const wf = index.workflows[workflowId];
+  if (!wf?.optional?.length) return [];
+  const loaded = new Set<string>();
+  for (const node of Object.values(graph ?? {})) {
+    if (!node || typeof node.class_type !== "string" || !node.inputs) continue;
+    for (const v of Object.values(node.inputs)) if (typeof v === "string" && v) loaded.add(v.replace(/\\/g, "/"));
+  }
+  const own = new Set(wf.files);
+  const out: FileNeed[] = [];
+  for (const key of wf.optional) {
+    const f = index.files[key];
+    if (!f || own.has(key) || !loaded.has(f.file)) continue;
+    out.push({ folder: f.folder, name: f.file, size: f.sizeBytes, sha256: f.sha256 ?? null });
+  }
+  return out;
+}
+
 /** The node inputs that name a LoRA file (LoraLoader's and LoraLoaderModelOnly's lora_name, WanVideoLoraSelect's lora). */
 const LORA_INPUT = /^lora(_name)?$/;
 

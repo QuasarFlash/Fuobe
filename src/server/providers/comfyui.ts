@@ -15,7 +15,7 @@ import { H3_LATENT_DRAFT_WORKFLOW, REGEN_COPY, REGEN_LATENT_WORKFLOW, REGEN_WORK
 import { fixFromPromptError } from "@/lib/gpu/fix-codes";
 import { loadIndex } from "../gpu/index-file";
 import type { FileNeed } from "@/lib/lanes";
-import { graphLoraNames, runtimeNeeds } from "@/lib/runtime-files";
+import { graphLoraNames, graphOptionalNeeds, runtimeNeeds } from "@/lib/runtime-files";
 import { installedDbs, type DbsModel } from "@/lib/av/split";
 import { installedReuse, type ReuseModel } from "@/lib/av/clean-voice";
 import { RTX_FRAMEGEN_WORKFLOW, RTX_HDR_WORKFLOW, RTX_MISSING } from "@/lib/catalog/rtx-video";
@@ -2105,8 +2105,10 @@ export const comfyProvider: ProviderAdapter = {
       if (forPool && workersCanRun(manifest.id) && !workersCanRun(manifest.id, { size: prepared.size })) throw new ProviderError(computer === "owner" ? NO_WORKER_FOR_SIZE : POOL_TOO_BIG);
       // The files the graph loads beyond its workflow's own (a look's, a motion's or a recipe's LoRAs): only a worker that
       // verified each one takes the task, and a job no worker could take is refused now, never left to wait for nothing
-      // (or refused by a worker for a file it hasn't verified).
-      const runtime = forPool ? runtimeNeeds(graphLoraNames(wf), loadIndex(), manifest.id) : null;
+      // (or refused by a worker for a file it hasn't verified). The workflow's optional files the graph loads count too (a
+      // Prompt helper's model when it is on, a decoder an option picks): only a worker that has them takes the task.
+      const loras = forPool ? runtimeNeeds(graphLoraNames(wf), loadIndex(), manifest.id) : null;
+      const runtime = loras && { ...loras, files: [...loras.files, ...graphOptionalNeeds(wf, loadIndex(), manifest.id).filter((f) => !loras.files.some((l) => l.folder === f.folder && l.name === f.name))] };
       if (runtime && workersCanRun(manifest.id) && (runtime.unknown.length || !workersCanRun(manifest.id, { files: runtime.files }))) {
         const lacking = [...runtime.unknown, ...runtime.files.filter((f) => !workersCanRun(manifest.id, { files: [f] })).map((f) => f.name)];
         throw new ProviderError(computer === "owner" ? noWorkerForFiles(lacking.length ? lacking : runtime.files.map((f) => f.name)) : POOL_NO_FILES);
