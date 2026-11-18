@@ -81,6 +81,7 @@ import { FIX_FACES, FIX_FACES_AFTER_PARAM, fixFacesAfterStep, wantsFixFacesAfter
 import { createH3TwoKRun, createRegenerateRun, keepsH3Latent, regenHeld, regenSwitchedOff } from "./regenerate";
 import { H3_2K_STEPS_NOTE, h3TwoKRequests, REGEN_COPY, REGEN_MODEL, regenerateGraphLoras, wantsH3TwoK } from "@/lib/catalog/regenerate";
 import { enhancePrompt, enhanceSoulWords, ideogramCaption } from "./enhance";
+import { englishPrompt, wantsEnglish } from "./english-prompt";
 import { kandinskyPrompt } from "@/lib/kandinsky-prompt";
 import { filmLookRun } from "./film-look";
 import { takesFilmLooks } from "@/lib/film-looks";
@@ -3792,9 +3793,25 @@ async function handOver(id: string, route: ModelRoute, providerId: ProviderId, p
     const captioned = plan.model.options.promptFormat === "ideogram4";
     // A layout's prompt is compiled boxes (plan.layout): the enhancer would rewrite them, so it never runs on one.
     const laidOut = !!plan.layout || carriesLayout(req.params?.extra);
+    // A prompt in another language goes to the model in English (src/server/english-prompt.ts). The run keeps the words
+    // as typed, so the person sees their own. A Soul look stays as it is: only the person's words are read. A layout, a
+    // caption given as JSON and an H3 layout keep their form.
+    let soulWords = plan.soul?.words;
+    if (prompt && !laidOut && !(captioned && parseCaption(prompt)) && !inH3Layout(prompt)) {
+      const at = soulWords ? prompt.indexOf(soulWords) : -1;
+      const words = soulWords && at >= 0 ? soulWords : prompt;
+      if (wantsEnglish(words, plan.model.kind, plan.op)) {
+        update(id, { message: "Preparing the prompt" });
+        const english = await englishPrompt(words, plan.model.kind, plan.op, { open: plan.model.engine === "open" }).catch(() => null);
+        if (english && soulWords && at >= 0) {
+          prompt = prompt.slice(0, at) + english + prompt.slice(at + soulWords.length);
+          soulWords = english;
+        } else if (english) prompt = english;
+      }
+    }
     if (req.params?.enhancePrompt && prompt && !captioned && !laidOut) {
       update(id, { message: "Enhancing prompt" });
-      const words = plan.soul?.words;
+      const words = soulWords;
       const at = words ? prompt.indexOf(words) : -1;
       if (words && at >= 0) {
         // Soul: only the user's words are expanded (60–120 words of subject, wardrobe, place, light); the look stays as it is.
