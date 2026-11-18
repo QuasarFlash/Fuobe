@@ -99,6 +99,8 @@ describe("execution errors (/history or the websocket)", () => {
   it("running out of memory: the node, in a few words", () => {
     const data = { node_id: "7", node_type: "KSampler", exception_type: "torch.OutOfMemoryError", exception_message: "CUDA out of memory. Tried to allocate 2.00 GiB. GPU 0 has a total capacity of 31.84 GiB", traceback };
     expect(executionReason(data)).toBe("CUDA out of memory in KSampler (node 7)");
+    // Dynamic VRAM could not place a model's weights on the card.
+    expect(executionReason({ node_id: "32", node_type: "KSampler", exception_type: "RuntimeError", exception_message: "Fault failed: 2", traceback })).toBe("Out of memory in KSampler (node 32)");
   });
 
   it("another exception: its type, its first line, and the last frames by file name only", () => {

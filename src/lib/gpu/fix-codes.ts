@@ -1,4 +1,5 @@
 import type { GenerationFix } from "@/lib/catalog/types";
+import { OUT_OF_MEMORY } from "@/lib/comfy-reason";
 
 /**
  * What a ComfyUI refusal says was missing (SPEC §13.2): a model file a loader didn't list ("not in list"), or a node
@@ -43,4 +44,4 @@ export function fixFromPromptError(
 }
 
 /** An out-of-memory error in a run's execution_error. */
-export const isOutOfMemory = (text: string | undefined): boolean => !!text && /out of memory|OutOfMemoryError|CUDA error: out of memory|allocation on device/i.test(text);
+export const isOutOfMemory = (text: string | undefined): boolean => !!text && OUT_OF_MEMORY.test(text);

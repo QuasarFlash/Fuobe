@@ -105,6 +105,8 @@ describe("the words for running out of memory (ranOutOfMemory)", () => {
     expect(tasks.ranOutOfMemory([failed("OSError", "The paging file is too small for this operation to complete. (os error 1455)")])).toBe(true);
     expect(tasks.ranOutOfMemory([failed("MemoryError", "")])).toBe(true);
     expect(tasks.ranOutOfMemory([failed("RuntimeError", "Not enough memory resources are available to process this command.")])).toBe(true);
+    expect(tasks.ranOutOfMemory([failed("RuntimeError", "Fault failed: 2")])).toBe(true);
+    expect(tasks.ranOutOfMemory([failed("RuntimeError", "Fault failed to load")])).toBe(false);
     expect(tasks.ranOutOfMemory([failed("ValueError", "bad input")])).toBe(false);
     // The reason the worker gave, for an entry whose messages it didn't keep.
     expect(tasks.ranOutOfMemory([{ status: { status_str: "error" } }], "CUDA out of memory in KSampler (node 12)")).toBe(true);

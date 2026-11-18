@@ -187,7 +187,13 @@ function lastFrames(tb: unknown, n = 2): string[] {
   return all.slice(-n);
 }
 
-const OUT_OF_MEMORY = /out of memory|OutOfMemoryError|Allocation on device|not enough memory|MemoryError/i;
+/**
+ * ComfyUI's words for running out of memory, on the card or in RAM: CUDA, HIP or MPS out of memory, torch's
+ * OutOfMemoryError, "Allocation on device", Python's MemoryError, "not enough memory", Windows' "The paging file is too
+ * small", and dynamic VRAM's "Fault failed: <code>" (comfy_aimdo could not place a model's weights on the card). Every
+ * out-of-memory check reads this one list.
+ */
+export const OUT_OF_MEMORY = /out of memory|OutOfMemoryError|allocation on device|not enough memory|paging file is too small|MemoryError|\bFault failed: -?\d+|VRAM Allocation failed/i;
 
 /**
  * Why a job stopped while ComfyUI ran it: its execution error (the data of a history entry's "execution_error" message,

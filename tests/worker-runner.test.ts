@@ -234,6 +234,20 @@ describe("a worker's runner", () => {
     expect(state(id2).state).toBe("failed");
   });
 
+  it("dynamic VRAM could not place a model's weights (Fault failed): freed and sent once more, like running out of memory", async () => {
+    const w = worker();
+    const id = task();
+    const s = studio(w);
+    let freed = 0;
+    const before = fake.posts();
+    fake.opts.failNext = "vram-fault";
+    await runner(s, hooks({ free: async () => void freed++ })).claimAndRun();
+    expect(state(id).state).toBe("done");
+    expect(fake.posts() - before).toBe(2);
+    expect(freed).toBe(1);
+    expect(s.reports.some((x) => x.event === "failed")).toBe(false);
+  });
+
   it("out of memory, then its retry doesn't move: given back as out of memory within minutes, never offered to this worker again", async () => {
     const w = worker();
     const id = task();

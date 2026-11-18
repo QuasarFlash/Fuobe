@@ -777,8 +777,9 @@ Every other workflow streams by the computed rule.
   VRAM need counts as the VRAM need, and its own files count for the computed rule.
 - **When a streamed job runs out of memory.** The claim notes on the task that the worker took it by streaming. If that
   job then fails because it ran out of memory, the worker no longer takes that workflow by streaming. Out of memory
-  means CUDA out of memory, "Allocation on device", "The paging file is too small", Python's `MemoryError` or "not
-  enough memory", in the failed entry's execution error or the worker's reason. The workflow goes on the worker's list
+  means CUDA out of memory, "Allocation on device", "The paging file is too small", Python's `MemoryError`, "not
+  enough memory" or dynamic VRAM's "Fault failed: <code>" (its weights could not be placed on the card), in the failed
+  entry's execution error or the worker's reason (one list, `OUT_OF_MEMORY` in `src/lib/comfy-reason.ts`). The workflow goes on the worker's list
   (`no_stream_json` on the worker, with the time; `noStream` in `GET /api/admin/workers`). If another worker can run
   the job, it goes back in line with its place kept, as a try that costs the run nothing. Its error doesn't show. With
   no other worker for it, or for a job taken with every weight on the card, or for any other error, the job fails as
@@ -1103,7 +1104,8 @@ The worker keeps its jobs going by itself:
 - **A job that the studio took back** (its token for the job no longer works, for example after the worker was out of
   touch) is stopped in its ComfyUI at once, so it never keeps the GPU busy for nothing.
 - **Out of memory.** The worker frees its ComfyUI's memory (`/free`) and sends the job once more. Only a second time
-  fails the job. The execution time that it reports is the retry's only.
+  fails the job. This covers dynamic VRAM's "Fault failed" too: a model loaded straight after another one may find no
+  room for its weights until the first one is let go. The execution time that it reports is the retry's only.
 - **Inputs are read once.** The worker keeps a copy of each input (by its SHA-256) while its job runs, so a job that
   is sent again reads nothing from the studio twice. If the studio will not send an input again (429 with no
   `Retry-After`), the job fails at once instead of looping. The copies go when the job ends, and also when a claim

@@ -27,7 +27,7 @@ import {
   cleanNodeClass,
   cleanNodeTitle,
 } from "@/lib/relay";
-import { reasonText } from "@/lib/comfy-reason";
+import { OUT_OF_MEMORY, reasonText } from "@/lib/comfy-reason";
 import { cleanPriority } from "@/lib/run-priority";
 import { cleanNodeTimes } from "@/lib/node-times";
 import { trackReport, type LiveProgress } from "@/lib/run-progress";
@@ -1386,13 +1386,6 @@ export const setPoolLost = (fn: (t: TaskRow) => void) => (poolLost = fn);
  */
 let poolOutOfMemory: ((t: TaskRow, now: number) => boolean) | null = null;
 export const setPoolOutOfMemory = (fn: (t: TaskRow, now: number) => boolean) => (poolOutOfMemory = fn);
-
-/**
- * The words for running out of memory: on the card (CUDA out of memory, torch's OutOfMemoryError, "Allocation on
- * device"), in system RAM (Python's MemoryError, "not enough memory") or in Windows' page file ("The paging file is too
- * small for this operation to complete").
- */
-const OUT_OF_MEMORY = /out of memory|OutOfMemoryError|allocation on device|not enough memory|paging file is too small|MemoryError/i;
 
 /**
  * Did a finished job end by running out of memory: one of its entries failed with an execution error in those words, or

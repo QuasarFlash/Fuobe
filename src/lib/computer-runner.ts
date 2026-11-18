@@ -8,7 +8,7 @@
  * a socket and a clock, and the tests drive it from Node against a stand-in ComfyUI.
  */
 import { isGuard } from "./comfy-guard";
-import { entryReason, refusalReason } from "./comfy-reason";
+import { entryReason, OUT_OF_MEMORY, refusalReason } from "./comfy-reason";
 import { withoutLocalPaths } from "./engine-error";
 import { FINISH_RUN_MS, finishProblem, type FinishResult, type FinishStats } from "./finish-ticket";
 import { fetchWithin } from "./fetch-within";
@@ -214,9 +214,6 @@ export interface WorkerHooks {
   /** How busy its GPU is now (0-100, its latest reading), or null when it can't say. Sent with each running job (JobMotion). */
   gpuBusy?(): number | null;
 }
-
-/** ComfyUI's words for running out of memory (lib/gpu/fix-codes.ts says the same). */
-const OUT_OF_MEMORY = /out of memory|OutOfMemoryError|allocation on device/i;
 
 /** The prompt ran out of memory (its entry's execution error says so). */
 export function outOfMemory(e: HistoryEntryLike): boolean {

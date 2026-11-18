@@ -6,6 +6,7 @@
  *
  * Only an account's own GPU and keys are read this way. The owner's runs and runs on the studio's GPUs keep their words.
  */
+import { OUT_OF_MEMORY } from "./comfy-reason";
 import { knownProblemOf } from "./gpu/known-problems";
 import { balanceMessage, CLOUD_KEY, keyRejectedMessage, type CloudProvider } from "./your-keys";
 
@@ -559,8 +560,7 @@ export function checksTooFast(retryAfterS: number): Diagnosis {
 /** The out-of-memory words of a run on the person's own GPU (the computer path says the same). */
 export const OUT_OF_MEMORY_WORDS = "Your GPU ran out of memory. Try a smaller size or a shorter clip.";
 
-const OOM = /out of memory|CUDA error: out of memory|OutOfMemoryError|allocation on device|Allocation on device|MPS backend out of memory|HIP out of memory/i;
-export const isOutOfMemoryText = (s: string) => OOM.test(s);
+export const isOutOfMemoryText = (s: string) => OUT_OF_MEMORY.test(s);
 
 const minutes = (n: number) => `${n} minute${n === 1 ? "" : "s"}`;
 

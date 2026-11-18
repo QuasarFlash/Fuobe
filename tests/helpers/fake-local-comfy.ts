@@ -35,7 +35,7 @@ export interface LocalComfyOptions {
   stepMs?: number;
   steps?: number;
   /** What the next prompt does. */
-  failNext?: "oom" | "missing_node" | "missing_model" | "gone" | "never";
+  failNext?: "oom" | "vram-fault" | "missing_node" | "missing_model" | "gone" | "never";
   /** Lose this many prompts in a row (taken, then gone: a restart while it waited). */
   loseNext?: number;
   /** What a job saves (default: what its save node makes: a clip, a sound, else a picture). "fake-png" is a web page named .png. */
@@ -414,8 +414,12 @@ export function startLocalComfy(given: LocalComfyOptions, port = 0): Promise<Loc
         timer = setTimeout(next, stepMs);
         return;
       }
-      if (job.fail === "oom") {
-        const err = { prompt_id: job.id, node_id: node, node_type: "KSampler", exception_message: "Allocation on device 0 would exceed allowed memory. (out of memory)", exception_type: "torch.OutOfMemoryError" };
+      if (job.fail === "oom" || job.fail === "vram-fault") {
+        // "vram-fault": dynamic VRAM (comfy_aimdo) could not place a model's weights on the card.
+        const err =
+          job.fail === "oom"
+            ? { prompt_id: job.id, node_id: node, node_type: "KSampler", exception_message: "Allocation on device 0 would exceed allowed memory. (out of memory)", exception_type: "torch.OutOfMemoryError" }
+            : { prompt_id: job.id, node_id: node, node_type: "KSampler", exception_message: "Fault failed: 2", exception_type: "RuntimeError", traceback: ['  File "comfy_aimdo/model_vbar.py", line 161, in vbar_fault\n', '  File "comfy_aimdo/model_vbar.py", line 109, in fault\n'] };
         event(job.clientId, "execution_error", err);
         return finish(job, { prompt: [job.number, job.id, job.graph, {}, []], outputs: {}, status: { status_str: "error", completed: false, messages: [begin, ["execution_error", { ...err, timestamp: Date.now() }]] } });
       }
