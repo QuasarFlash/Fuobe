@@ -97,6 +97,14 @@ describe("cleanEnglish", () => {
     expect(cleanEnglish('"Hola" written in neon', '"Hola" escrito en neón')).toBe('"Hola" written in neon');
   });
 
+  it("gives nothing for a refusal, so the run keeps the words as typed", () => {
+    for (const r of ["I'm sorry, but I can't help with that.", "I cannot translate this content.", "I can't assist with that request.", "Sorry, I am unable to do that.", "As an AI, I won't write that."]) expect(cleanEnglish(r, "x")).toBeNull();
+    // An answer that only starts like one goes as typed too (the words were the person's anyway)...
+    expect(cleanEnglish("Unfortunately rainy street, a man under an umbrella", "x")).toBeNull();
+    // ...unless the person's own words start that way.
+    expect(cleanEnglish("Sorry sign in neon over a bar", "Sorry sign in neon")).toBe("Sorry sign in neon over a bar");
+  });
+
   it("gives nothing for an empty answer", () => {
     expect(cleanEnglish("   ", "x")).toBeNull();
     expect(cleanEnglish(null, "x")).toBeNull();

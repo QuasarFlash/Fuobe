@@ -40,6 +40,9 @@ Remove the hat and the glasses.
 Mach den Himmel klar, ohne Wolken, und ändere das Auto nicht
 Make the sky clear and cloudless, and keep the car the same.`;
 
+/** How a model's refusal starts ("I'm sorry, but…", "I can't help with that", "As an AI…"). */
+const REFUSAL = /^(i'?m sorry|i am sorry|sorry|i apologi[sz]e|i (can ?not|can't|cannot|won't|will not|am unable|'m unable|am not able)|unfortunately|as an ai)\b/i;
+
 /** The helper's answer as a prompt: trimmed, a wrapper of quotes or a "Prompt:" label taken off; null when it isn't one. */
 export function cleanEnglish(answer: string | null | undefined, original: string): string | null {
   if (!answer) return null;
@@ -47,6 +50,8 @@ export function cleanEnglish(answer: string | null | undefined, original: string
   s = s.replace(/^(english( prompt)?|prompt|translation)\s*:\s*/i, "").trim();
   if (/^(["“'])[\s\S]*(["”'])$/.test(s) && !/^["“']/.test(original.trim())) s = s.slice(1, -1).trim();
   if (!s) return null;
+  // A model that declines answers with a refusal, never a prompt: the run keeps the words as typed.
+  if (REFUSAL.test(s) && !REFUSAL.test(original.trim())) return null;
   // A prompt, not a chat: far longer than the words given means the model said more than the prompt.
   if (s.length > original.length * 3 + 200) return null;
   return s;
