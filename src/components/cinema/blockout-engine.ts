@@ -5,21 +5,34 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DOOR_GAP, STAIR_STEPS, aspectOf, cameraAt, lensVFov, primAt, primSpeed, type BlockoutPrim, type BlockoutScene, type Vec3 } from "@/lib/blockout";
+import { cameraTrail, frustumCorners, frustumDepth, piecePaths } from "@/lib/blockout-staging";
 import { encodeFrames } from "./video-encode";
 
 /**
  * The blockout builder's renderer (three.js, loaded only when the builder opens): grey boxes, planes, a doorway, stairs,
  * a door on its hinge, a mannequin that walks between its keys and GLB meshes; an orbit view to build in with a move /
  * turn gizmo, the shot camera along its keys (eased, with handheld shake), and the render of the grey box and its depth
- * (near = bright, as Depth Anything draws it) frame by frame into video.
+ * (near = bright, as Depth Anything draws it) frame by frame into video. The staging view draws two panes on the one
+ * canvas: the shot camera's viewfinder, and the set from outside with the camera body, its frustum, its trail with
+ * key dots and each moving piece's path.
  */
 
 const GREY = 0xb4b4b4;
 const FIGURE = 0x8e8e8e;
 const BACKGROUND = 0x404040;
 const DEG = Math.PI / 180;
+const TRAIL = 0xffc04d;
+const PATHS = 0x6cc4ff;
 
-export type ViewMode = "edit" | "shot";
+export type ViewMode = "edit" | "shot" | "stage";
+
+/** A pane of the staging view, in CSS pixels from the canvas's top left. */
+export interface PaneRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface EngineEvents {
   onSelect?: (id: string | null) => void;
@@ -181,6 +194,12 @@ export class BlockoutEngine {
   private readonly objects = new Map<string, { obj: THREE.Object3D; figure?: Figure; prim: BlockoutPrim }>();
   private readonly path: THREE.Line;
   private readonly frustum = new THREE.Group();
+  /** The staging view's helpers (inside `helpers`, shown in the staging view only). */
+  private readonly stage = new THREE.Group();
+  private readonly stagePaths = new THREE.Group();
+  private readonly body = new THREE.Group();
+  private readonly frustumLines: THREE.LineSegments;
+  private panes: { frame: PaneRect | null; god: PaneRect | null } = { frame: null, god: null };
   private outline: THREE.BoxHelper | null = null;
   private data: BlockoutScene | null = null;
   private time = 0;
@@ -213,7 +232,20 @@ export class BlockoutEngine {
     grid.position.y = 0.001;
     this.helpers.add(grid);
     this.path = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffc04d }));
-    this.helpers.add(this.path, this.frustum);
+    this.helpers.add(this.path, this.frustum, this.stage);
+    // The camera body: a box with its lens towards +z (Object3D.lookAt turns +z to the target).
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2c });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.24), bodyMat);
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.1, 16).rotateX(Math.PI / 2).translate(0, 0, 0.17), new THREE.MeshBasicMaterial({ color: TRAIL }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.12).translate(0, 0.085, -0.02), bodyMat);
+    this.body.add(box, lens, top);
+    this.body.scale.setScalar(1.4);
+    this.frustumLines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(16 * 3), 3)), new THREE.LineBasicMaterial({ color: TRAIL }));
+    this.frustumLines.frustumCulled = false;
+    this.stage.add(this.stagePaths, this.body, this.frustumLines);
+    this.stage.visible = false;
+    xray(this.stage);
+    lens.renderOrder = top.renderOrder = 11;
     this.view = new THREE.PerspectiveCamera(50, 1, 0.05, 400);
     this.view.position.set(6, 5, 8);
     this.shot = new THREE.PerspectiveCamera(40, 16 / 9, 0.05, 400);
@@ -304,6 +336,7 @@ export class BlockoutEngine {
     }
     if (this.selected && !keep.has(this.selected)) this.select(null);
     if (!prev || prev.camera !== s.camera || prev.duration !== s.duration) this.drawPath();
+    if (!prev || prev.camera !== s.camera || prev.duration !== s.duration || prev.prims !== s.prims) this.drawStagePaths();
     this.pose(this.time);
     if (this.selected) this.attach(this.selected);
     this.dirty = true;
@@ -320,6 +353,48 @@ export class BlockoutEngine {
     }
     this.path.geometry.dispose();
     this.path.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  }
+
+  /** The staging view's camera trail with a dot at each key, and each travelling piece's path with its keys. */
+  private drawStagePaths() {
+    const s = this.data;
+    if (!s) return;
+    disposeTree(this.stagePaths);
+    this.stagePaths.clear();
+    const line = (pts: Vec3[], color: number) => new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color }));
+    const dots = (pts: Vec3[], color: number, r: number) => {
+      const g = new THREE.Group();
+      const geo = new THREE.SphereGeometry(r, 12, 8);
+      const mat = new THREE.MeshBasicMaterial({ color });
+      for (const p of pts) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(...p);
+        g.add(m);
+      }
+      return g;
+    };
+    this.stagePaths.add(line(cameraTrail(s.camera, s.duration), TRAIL), dots(s.camera.map((k) => k.position), TRAIL, 0.06));
+    // Actors' paths just above the floor they walk on.
+    const lift = (p: Vec3): Vec3 => [p[0], p[1] + 0.02, p[2]];
+    for (const p of piecePaths(s)) this.stagePaths.add(line(p.points.map(lift), PATHS), dots(p.keys.map(lift), PATHS, 0.05));
+    xray(this.stagePaths);
+  }
+
+  /** The staging view's camera body and frustum where the shot camera is. */
+  private placeStageCamera(position: Vec3, target: Vec3, lens: number, aspect: number) {
+    this.body.position.set(...position);
+    this.body.lookAt(new THREE.Vector3(...target));
+    const corners = frustumCorners(position, target, lens, aspect, frustumDepth(position, target));
+    const attr = this.frustumLines.geometry.getAttribute("position") as THREE.BufferAttribute;
+    let i = 0;
+    const put = (p: Vec3) => attr.setXYZ(i++, p[0], p[1], p[2]);
+    for (let k = 0; k < 4; k++) {
+      put(position);
+      put(corners[k]);
+      put(corners[k]);
+      put(corners[(k + 1) % 4]);
+    }
+    attr.needsUpdate = true;
   }
 
   private placeFrustum(position: Vec3, target: Vec3) {
@@ -360,6 +435,7 @@ export class BlockoutEngine {
     this.shot.lookAt(new THREE.Vector3(...c.target));
     this.shot.updateProjectionMatrix();
     this.placeFrustum(c.position, c.target);
+    this.placeStageCamera(c.position, c.target, c.lens, aspectOf(s.aspect));
     this.outline?.update();
   }
 
@@ -373,6 +449,33 @@ export class BlockoutEngine {
     this.mode = m;
     this.gizmo.enabled = m === "edit";
     this.gizmo.getHelper().visible = m === "edit" && !!this.selected;
+    const stage = m === "stage";
+    this.stage.visible = stage;
+    this.path.visible = !stage;
+    this.frustum.visible = !stage;
+    if (this.outline) this.outline.visible = !stage;
+    this.dirty = true;
+  }
+
+  /** The staging view's panes: the viewfinder and the view from outside (null: not shown). */
+  setPanes(frame: PaneRect | null, god: PaneRect | null) {
+    this.panes = { frame, god };
+    this.dirty = true;
+  }
+
+  /** Point the outside view at the whole set and the camera's trail, from a high three-quarter angle. */
+  frameAll() {
+    const s = this.data;
+    if (!s) return;
+    const box = new THREE.Box3().setFromObject(this.props);
+    for (const p of cameraTrail(s.camera, s.duration, 24)) box.expandByPoint(new THREE.Vector3(...p));
+    if (box.isEmpty()) return;
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(2, box.getSize(new THREE.Vector3()).length() / 2);
+    const dist = Math.min(150, radius / Math.sin((this.view.fov * DEG) / 2));
+    this.view.position.copy(centre).add(new THREE.Vector3(0.55, 0.6, 0.6).normalize().multiplyScalar(dist));
+    this.orbit.target.copy(centre);
+    this.orbit.update();
     this.dirty = true;
   }
 
@@ -404,6 +507,7 @@ export class BlockoutEngine {
     this.gizmo.getHelper().visible = this.mode === "edit";
     if (!this.outline) {
       this.outline = new THREE.BoxHelper(e.obj, 0x6aa8ff);
+      this.outline.visible = this.mode !== "stage";
       this.helpers.add(this.outline);
     } else this.outline.setFromObject(e.obj);
   }
@@ -448,7 +552,12 @@ export class BlockoutEngine {
     r.setViewport(0, 0, this.size.w, this.size.h);
     if (this.mode === "edit") {
       this.helpers.visible = true;
+      this.fitView(this.size.w / this.size.h);
       r.render(this.scene3, this.view);
+      return;
+    }
+    if (this.mode === "stage") {
+      this.drawStage();
       return;
     }
     // The shot camera, letterboxed.
@@ -462,6 +571,48 @@ export class BlockoutEngine {
     this.shot.aspect = f.w / f.h;
     this.shot.updateProjectionMatrix();
     r.render(this.scene3, this.shot);
+    r.setScissorTest(false);
+  }
+
+  private fitView(aspect: number) {
+    if (Math.abs(this.view.aspect - aspect) < 1e-6) return;
+    this.view.aspect = aspect;
+    this.view.updateProjectionMatrix();
+  }
+
+  /** The staging view: the viewfinder (letterboxed in its pane, black around it) and the set from outside. */
+  private drawStage() {
+    const r = this.renderer;
+    const H = this.size.h;
+    // Panes come from the page (top left); WebGL counts from the bottom.
+    const gl = (p: PaneRect) => [p.x, H - p.y - p.h, Math.max(1, p.w), Math.max(1, p.h)] as const;
+    r.setScissorTest(true);
+    r.setClearColor(0x111112, 1);
+    r.setScissor(0, 0, this.size.w, H);
+    r.clear();
+    const { frame, god } = this.panes;
+    if (frame && frame.w > 1 && frame.h > 1) {
+      r.setScissor(...gl(frame));
+      r.setClearColor(0x000000, 1);
+      r.clear();
+      const a = aspectOf(this.data?.aspect ?? "16:9");
+      const fw = Math.min(frame.w, frame.h * a);
+      const fh = fw / a;
+      const box = gl({ x: frame.x + (frame.w - fw) / 2, y: frame.y + (frame.h - fh) / 2, w: fw, h: fh });
+      r.setScissor(...box);
+      r.setViewport(...box);
+      this.helpers.visible = false;
+      this.shot.aspect = fw / fh;
+      this.shot.updateProjectionMatrix();
+      r.render(this.scene3, this.shot);
+    }
+    if (god && god.w > 1 && god.h > 1) {
+      r.setScissor(...gl(god));
+      r.setViewport(...gl(god));
+      this.helpers.visible = true;
+      this.fitView(god.w / god.h);
+      r.render(this.scene3, this.view);
+    }
     r.setScissorTest(false);
   }
 
@@ -555,6 +706,7 @@ export class BlockoutEngine {
     this.figureMat.dispose();
     this.depthMat.dispose();
     this.path.geometry.dispose();
+    disposeTree(this.stage);
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
@@ -564,6 +716,24 @@ const round = (n: number) => Math.round(n * 1000) / 1000 + 0;
 
 function sameShape(a: BlockoutPrim, b: BlockoutPrim): boolean {
   return a.kind === b.kind && a.url === b.url && a.size.every((n, i) => n === b.size[i]);
+}
+
+/** Draw a helper through the set (walls and ceilings don't hide the camera or the paths). */
+function xray(o: THREE.Object3D) {
+  o.traverse((x) => {
+    x.renderOrder = Math.max(x.renderOrder, 10);
+    const m = (x as THREE.Mesh).material as THREE.Material | undefined;
+    if (m) Object.assign(m, { depthTest: false, depthWrite: false, transparent: true });
+  });
+}
+
+/** Free every geometry and material under a helper (helpers share neither with the set). */
+function disposeTree(o: THREE.Object3D) {
+  o.traverse((x) => {
+    const m = x as THREE.Mesh;
+    m.geometry?.dispose();
+    for (const mat of (Array.isArray(m.material) ? m.material : m.material ? [m.material] : []) as THREE.Material[]) mat.dispose();
+  });
 }
 
 /** Free an object's geometry (and materials other than the shared ones). */
