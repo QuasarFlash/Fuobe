@@ -110,6 +110,15 @@
     "subdir": null,
     "folders": []
   },
+  "moss-anypaint": {
+    "repo": "https://github.com/alexw5702-afk/moss-anypaint",
+    "commit": "b1df126d2546acbd450f29913c56f66d59b969ae",
+    "registry": null,
+    "requirementsTxt": false,
+    "isolated": false,
+    "subdir": null,
+    "folders": []
+  },
   "ComfyUI-LTXVideo": {
     "repo": "https://github.com/Lightricks/ComfyUI-LTXVideo",
     "commit": "220e1d45aa0469f518e982102fca4dca92a61862",

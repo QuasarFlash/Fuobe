@@ -1,0 +1,215 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "input.png"
+    },
+    "_meta": {
+      "title": "Photo (image)"
+    }
+  },
+  "3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 16
+    },
+    "_meta": {
+      "title": "About 1 MP, sides on the 16-pixel grid"
+    }
+  },
+  "10": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "moss_image_base_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "MOSS-Image Base (int8 convrot)"
+    }
+  },
+  "11": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+      "type": "moss_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Qwen3.5-9B text encoder (int8)"
+    }
+  },
+  "12": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae_small.safetensors"
+    },
+    "_meta": {
+      "title": "FLUX.2 VAE with the small decoder"
+    }
+  },
+  "13": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "lora_name": "moss_anypaint_rank32.safetensors",
+      "strength_model": 1
+    },
+    "_meta": {
+      "title": "Load LoRA (MOSS AnyPaint task adapter)"
+    }
+  },
+  "14": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "13",
+        0
+      ],
+      "lora_name": "lora_dmd2.safetensors",
+      "strength_model": 1
+    },
+    "_meta": {
+      "title": "Load LoRA (Base 8-step DMD2)"
+    }
+  },
+  "15": {
+    "class_type": "MOSSAnyPaintModelPatch",
+    "inputs": {
+      "model": [
+        "14",
+        0
+      ],
+      "kv_cache": true
+    },
+    "_meta": {
+      "title": "MOSS AnyPaint Model Patch (reference over the whole canvas, K/V cache on)"
+    }
+  },
+  "16": {
+    "class_type": "MOSSAnyPaintPrepare",
+    "inputs": {
+      "source": [
+        "3",
+        0
+      ],
+      "left": 256,
+      "top": 256,
+      "right": 256,
+      "bottom": 256,
+      "reference_max_edge": 384,
+      "boundary_redraw_px": 32
+    },
+    "_meta": {
+      "title": "MOSS AnyPaint Prepare (the margins are generated)"
+    }
+  },
+  "20": {
+    "class_type": "MOSSAnyPaintEncode",
+    "inputs": {
+      "clip": [
+        "11",
+        0
+      ],
+      "vae": [
+        "12",
+        0
+      ],
+      "semantic_reference": [
+        "16",
+        0
+      ],
+      "known_image": [
+        "16",
+        1
+      ],
+      "keep_mask": [
+        "16",
+        3
+      ],
+      "prompt": "A wide coastal garden in morning light, the path and flowers continuing past every edge."
+    },
+    "_meta": {
+      "title": "The whole picture as it should look"
+    }
+  },
+  "21": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "20",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Conditioning Zero Out (cfg 1)"
+    }
+  },
+  "23": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "15",
+        0
+      ],
+      "positive": [
+        "20",
+        0
+      ],
+      "negative": [
+        "21",
+        0
+      ],
+      "latent_image": [
+        "20",
+        1
+      ],
+      "seed": 0,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "KSampler (8 steps, cfg 1; keeps the unmasked area at every step)"
+    }
+  },
+  "24": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "23",
+        0
+      ],
+      "vae": [
+        "12",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "29": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "24",
+        0
+      ],
+      "filename_prefix": "fuobe/moss-anypaint-outpaint"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

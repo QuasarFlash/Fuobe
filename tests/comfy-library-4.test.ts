@@ -122,6 +122,9 @@ describe("round-4 ComfyUI workflows", () => {
       "qwen-image-21-t2i-small",
       "qwen-image-21-edit-small",
       "krea2-outpaint",
+      // MOSS AnyPaint: the moss-anypaint nodes aren't on the validation server (tests/moss-anypaint.test.ts).
+      "moss-anypaint-inpaint",
+      "moss-anypaint-outpaint",
       "video-restore-ltx25-tiled",
       // Hi3D refine (hi3d-refine): Comfyui-Hi3d-T8 needs an Ampere-or-newer NVIDIA GPU, so it isn't on the validation server.
       "mesh-refine-hi3d",

@@ -17341,6 +17341,219 @@
     "has_intermediate_output": false,
     "search_aliases": []
   },
+  "MOSSAnyPaintEncode": {
+    "input": {
+      "required": {
+        "clip": [
+          "CLIP"
+        ],
+        "prompt": [
+          "STRING",
+          {
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "semantic_reference": [
+          "IMAGE"
+        ],
+        "known_image": [
+          "IMAGE"
+        ],
+        "keep_mask": [
+          "MASK"
+        ]
+      }
+    },
+    "input_order": {
+      "required": [
+        "clip",
+        "prompt",
+        "vae",
+        "semantic_reference",
+        "known_image",
+        "keep_mask"
+      ]
+    },
+    "is_input_list": false,
+    "output": [
+      "CONDITIONING",
+      "LATENT"
+    ],
+    "output_is_list": [
+      false,
+      false
+    ],
+    "output_name": [
+      "positive",
+      "latent"
+    ],
+    "name": "MOSSAnyPaintEncode",
+    "display_name": "MOSS AnyPaint Encode",
+    "description": "Encode the full-canvas semantic reference and create a standard Comfy latent/noise_mask pair. KSampler performs timestep-matched known-region replacement; no final source composite is used.",
+    "python_module": "custom_nodes.moss-anypaint",
+    "category": "MOSS/AnyPaint",
+    "output_node": false,
+    "has_intermediate_output": false,
+    "search_aliases": []
+  },
+  "MOSSAnyPaintModelPatch": {
+    "input": {
+      "required": {
+        "model": [
+          "MODEL"
+        ],
+        "kv_cache": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      }
+    },
+    "input_order": {
+      "required": [
+        "model",
+        "kv_cache"
+      ]
+    },
+    "is_input_list": false,
+    "output": [
+      "MODEL"
+    ],
+    "output_is_list": [
+      false
+    ],
+    "output_name": [
+      "MODEL"
+    ],
+    "name": "MOSSAnyPaintModelPatch",
+    "display_name": "MOSS AnyPaint Model Patch",
+    "description": "Register the semantic reference over the complete target canvas and cache its isolated K/V once per sampling run. Place after Load LoRA.",
+    "python_module": "custom_nodes.moss-anypaint",
+    "category": "MOSS/AnyPaint",
+    "output_node": false,
+    "has_intermediate_output": false,
+    "search_aliases": []
+  },
+  "MOSSAnyPaintPrepare": {
+    "input": {
+      "required": {
+        "source": [
+          "IMAGE"
+        ],
+        "left": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 8192,
+            "step": 16
+          }
+        ],
+        "top": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 8192,
+            "step": 16
+          }
+        ],
+        "right": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 8192,
+            "step": 16
+          }
+        ],
+        "bottom": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 8192,
+            "step": 16
+          }
+        ],
+        "reference_max_edge": [
+          "INT",
+          {
+            "default": 384,
+            "min": 128,
+            "max": 768,
+            "step": 16
+          }
+        ],
+        "boundary_redraw_px": [
+          "INT",
+          {
+            "default": 32,
+            "min": 0,
+            "max": 256,
+            "step": 1
+          }
+        ]
+      },
+      "optional": {
+        "generated_mask": [
+          "MASK"
+        ]
+      }
+    },
+    "input_order": {
+      "required": [
+        "source",
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "reference_max_edge",
+        "boundary_redraw_px"
+      ],
+      "optional": [
+        "generated_mask"
+      ]
+    },
+    "is_input_list": false,
+    "output": [
+      "IMAGE",
+      "IMAGE",
+      "MASK",
+      "MASK",
+      "INT",
+      "INT"
+    ],
+    "output_is_list": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "output_name": [
+      "semantic_reference",
+      "known_image",
+      "generated_mask",
+      "keep_mask",
+      "canvas_width",
+      "canvas_height"
+    ],
+    "name": "MOSSAnyPaintPrepare",
+    "display_name": "MOSS AnyPaint Prepare",
+    "description": "Connect source IMAGE and a MASK from SAM, Mask Editor or another mask node. White/values above 0.5 generate; black/other values preserve. For a separate black/white image use ImageToMask (red). Padding defaults to zero; add padding only for outpainting.",
+    "python_module": "custom_nodes.moss-anypaint",
+    "category": "MOSS/AnyPaint",
+    "output_node": false,
+    "has_intermediate_output": false,
+    "search_aliases": []
+  },
   "ManualSigmas": {
     "input": {
       "required": {

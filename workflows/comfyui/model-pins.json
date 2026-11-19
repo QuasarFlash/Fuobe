@@ -1553,5 +1553,15 @@
   "revision": "01a17db182d52088b222d615ce54729fa090b378",
   "sizeBytes": 12341060026,
   "sha256": "2151b56ce1fcf4df50ebc1114438b5660174e3c641da3f9f369fbe4e5dcfb9f4"
+ },
+ "https://huggingface.co/yijunwang2/moss-anypaint/resolve/7edba8f26d216f5260a940c6de9e43bfa52df60f/moss_anypaint_rank32.safetensors": {
+  "revision": "7edba8f26d216f5260a940c6de9e43bfa52df60f",
+  "sizeBytes": 148693368,
+  "sha256": "151701bc1a4f572bb62af22e4bc2c6db5b3a755b95c1ae93ad1a388d1ec17078"
+ },
+ "https://huggingface.co/lodestones/MOSS-Image-Base-8-steps-dmd/resolve/da05cb3b52899179e2bb5f7efe1058fefcbae21b/lora_dmd2.safetensors": {
+  "revision": "da05cb3b52899179e2bb5f7efe1058fefcbae21b",
+  "sizeBytes": 1189176800,
+  "sha256": "7683fe1fb51f73f5d690f24dd6b7f46f31ab9a9873729a854ac5c9a420ffe6f2"
  }
 }

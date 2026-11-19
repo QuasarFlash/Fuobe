@@ -243,6 +243,9 @@ export const CUSTOM_NODE_REPOS = {
   // the Hi3D Open License 1.0), v0.5.1. Opt-in in install-comfyui.sh (HI3D=1): it needs an Ampere-or-newer NVIDIA GPU and
   // CUDA kernels (spconv, triton), so it is not on the validation server (mesh-refine-hi3d lists it with `packs`).
   'Comfyui-Hi3d-T8': 'https://github.com/T8mars/Comfyui-Hi3d-T8/tree/73848490976e6a9b0c735ce02984c03866a495e7',
+  // MOSS AnyPaint (moss-anypaint-inpaint / -outpaint): canvas prep, reference encode and the reference placement patch
+  // over core MOSS-Image (MIT, v0.2.0). Not on the validation server (the entries list it with `packs`).
+  'moss-anypaint': 'https://github.com/alexw5702-afk/moss-anypaint/tree/b1df126d2546acbd450f29913c56f66d59b969ae',
   // Live edit: Fuobe's own node file (src/lib/comfy-live-nodes.ts), shipped with Fuobe rather than cloned from a repo.
   'fuobe-live': 'https://github.com/workingprototype/Fuobe',
   // Qwen-Image 2.1 on a 16 GB card: recoilme's Zen Image Edit nodes (Qwen3.5-0.8B encoder + fusion adapter),
@@ -311,6 +314,7 @@ export const PACK_CLASSES = {
   'ComfyUI-MiniMax-H3-Turbo': /^MiniMaxH3Turbo(LoRA|Sampler)$/,
   'plaguekind-nodes': /^H3(SLAAttention|AdaLNLoRAFix)$/,
   'Comfyui-Hi3d-T8': /^Hi3D(ModelLoader|LoadMesh|Refine)$/,
+  'moss-anypaint': /^MOSSAnyPaint(Prepare|Encode|ModelPatch)$/,
   'ComfyUI-Open-H3-Regenerate': /^OpenH3(Regen(Lora|Sigmas|PrepareDraft|Upscale|RefineLatent|FastVAEDecode|Finish)|SaveRefinedLatent|LoadRefinedLatent|VideoToPrompt)$/,
   Comfyui_Minimax_h3_latent_Upscaler: /^(MinimaxH3LatentUpscaler(3D|Node2D)|MMH3(TemporalSplitParamsV10|SpatialSplitParamsV10|SplitUpscale))$/,
   'ComfyUI-RE-USE': /^REUSE(Loader|Enhance)$/,
@@ -519,6 +523,9 @@ export const KNOWN_MODELS = {
   'qwen3.5_9b_w4a8_gptq.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/MOSS-Image/resolve/530a4c94f92c35ef6818b1b035a983fe9dcf5f54/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors' },
   'flux2-vae_small.safetensors': { folder: 'vae', url: 'https://huggingface.co/Comfy-Org/MOSS-Image/resolve/530a4c94f92c35ef6818b1b035a983fe9dcf5f54/vae/flux2-vae_small.safetensors' },
   'moss_image_sft_8stepdmd_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Spectrallic/MOSS-Image-SFT-8step-DMD-int8-convrot/resolve/8fdeb392c6322418687fc2519a7958c954497a22/moss_image_sft_8stepdmd_int8_convrot.safetensors' },
+  // MOSS AnyPaint: the task LoRA (rank 32) and the Base 8-step DMD2 LoRA it was trained with (lora_dmd2, not the older lora.safetensors).
+  'moss_anypaint_rank32.safetensors': { folder: 'loras', url: 'https://huggingface.co/yijunwang2/moss-anypaint/resolve/7edba8f26d216f5260a940c6de9e43bfa52df60f/moss_anypaint_rank32.safetensors' },
+  'lora_dmd2.safetensors': { folder: 'loras', url: 'https://huggingface.co/lodestones/MOSS-Image-Base-8-steps-dmd/resolve/da05cb3b52899179e2bb5f7efe1058fefcbae21b/lora_dmd2.safetensors' },
   'z_image_turbo_bf16.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors' },
   'z_image_turbo_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors' },
   'qwen_3_4b.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors' },
@@ -698,6 +705,11 @@ export const KNOWN_MODELS = {
   'qwen3vl_32b_minimax_h3_int8_convrot.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/54472221d27c695fca9621b0c3ed52f06c4af707/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors' },
   'qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/resolve/feef60b0aaf63a4773ace96636ebbcf43b881312/text_encoders/qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors', variants: ['qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors', 'qwen3.5_9b_flux3_prompt_upsampler_bf16.safetensors'] },
 };
+
+// MOSS AnyPaint (moss-anypaint-*): every file's licence, as information.
+const MOSS_ANYPAINT_LICENSE =
+  'Apache-2.0 (MOSS-Image Base, Qwen3.5-9B, FLUX.2 small decoder; the MOSS AnyPaint LoRA by yijunwang2 and the Base 8-step DMD2 LoRA by lodestones, ' +
+  'both Apache-2.0); moss-anypaint nodes MIT';
 
 // FLUX 3 Image Klein (flux3-klein-*): every file's licence, as information (never a gate).
 const KLEIN_LICENSE =
@@ -4252,6 +4264,45 @@ export const SPEC = [
       'then black over its mask: a hard edge like the example\'s SolidMask canvas), scaled to about 1 MP, then the same LoRA, patch (kv_cache on) and 8 euler_ancestral steps. Default pads 256 px a side ' +
       '(the example grows a 512 px picture by a quarter of its side on each). The prompt describes the whole scene. The v1 512 LoRA was trained without outpainting masks (v2 adds them, model card). ' +
       'Needs the ComfyUI-Krea2-Ostris-Edit nodes.',
+  },
+  // ---- MOSS AnyPaint: inpaint, expand and edit inside any mask on MOSS-Image Base ------------------------------------
+  {
+    id: 'moss-anypaint-inpaint',
+    title: 'MOSS AnyPaint Inpaint: the masked area generated by MOSS-Image Base with the AnyPaint LoRA (moss-anypaint nodes)',
+    capability: 'inpaint',
+    handBuilt: 'hand-built/moss-anypaint-inpaint.json',
+    bindings: { prompt: [b('20', 'prompt')], image: [b('1', 'image')], mask: [b('2', 'image')], seed: [b('23', 'seed')], steps: [b('23', 'steps')] },
+    outputs: [{ node: '29', kind: 'image' }],
+    limits: { maxWidth: 2048, maxHeight: 2048 },
+    packs: ['moss-anypaint'],
+    vramGb: 16,
+    license: MOSS_ANYPAINT_LICENSE,
+    notes:
+      'The moss-anypaint workflow (v0.2.0): MOSS-Image Base int8 → LoRA moss_anypaint_rank32 at 1.0 → LoRA lora_dmd2 (Base 8-step DMD2) at 1.0 → MOSSAnyPaintModelPatch (kv_cache on). ' +
+      'The photo is scaled to about 1 MP on the 16-pixel grid; MOSSAnyPaintPrepare (no padding, reference_max_edge 384, boundary_redraw_px 32) builds the 384 px reference with the area to generate ' +
+      'filled by the median colour, the known canvas and the keep mask; MOSSAnyPaintEncode encodes the prompt with the reference and returns the known latent with a noise mask, so KSampler ' +
+      '(8 steps, cfg 1, euler / simple) keeps the unmasked area at every step. mask = separate PNG, red channel, white = generate, black = keep (values above 0.5). ' +
+      'The prompt describes the whole picture as it should look. The output is the raw decode, nothing is pasted back. ' +
+      'Needs a ComfyUI with core MOSS-Image reference support (preprocess_refs, ComfyUI #17296, after 0.42.0) and the moss-anypaint nodes. The VRAM figure is an estimate, as for moss-image-t2i.',
+  },
+  {
+    id: 'moss-anypaint-outpaint',
+    title: 'MOSS AnyPaint Expand: the canvas grown by the pads and generated by MOSS-Image Base with the AnyPaint LoRA (moss-anypaint nodes)',
+    capability: 'outpaint',
+    handBuilt: 'hand-built/moss-anypaint-outpaint.json',
+    bindings: {
+      prompt: [b('20', 'prompt')], image: [b('1', 'image')], padLeft: [b('16', 'left')], padTop: [b('16', 'top')], padRight: [b('16', 'right')], padBottom: [b('16', 'bottom')],
+      seed: [b('23', 'seed')], steps: [b('23', 'steps')],
+    },
+    outputs: [{ node: '29', kind: 'image' }],
+    limits: { maxWidth: 2048, maxHeight: 2048, padMultiple: 16 },
+    packs: ['moss-anypaint'],
+    vramGb: 16,
+    license: MOSS_ANYPAINT_LICENSE,
+    notes:
+      'moss-anypaint-inpaint\'s graph with the pads in place of a mask: the photo scaled to about 1 MP on the 16-pixel grid, then MOSSAnyPaintPrepare grows the canvas by ' +
+      'padLeft/padTop/padRight/padBottom px of that picture (aligned up to 16) and generates the new margins, with a 32 px band inside the photo\'s edge redrawn for a clean seam. ' +
+      'The photo is never stretched. Default pads 256 px a side. The prompt describes the whole picture on the new canvas. Needs the moss-anypaint nodes.',
   },
   // ---- Owner's SOTA image families: FIBO 2 (Bria FIBO 2.0 Dev and Edit Turbo, core nodes) ------------------------
   {
