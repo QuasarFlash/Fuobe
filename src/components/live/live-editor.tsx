@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Redo2,
   Save,
+  ScanFace,
   Shuffle,
   Undo2,
   Upload,
@@ -37,10 +38,12 @@ import type { LiveEvent } from "@/lib/live/frames";
 import { aspectOf, AutoSize, isAspect, keepAuto, KEEP_LADDER, LIVE_LADDER, type Aspect, type KeepRes, type LiveSize } from "@/lib/live/sizes";
 import { pictureExt, pngSize } from "@/lib/live/names";
 import { DEFAULT_METHOD, restoreStack, StepStack, type Method, type Step } from "@/lib/live/steps";
+import { MirrorPacer, mirrorPrompt, type MirrorDone } from "@/lib/live/mirror";
 import { changeCount, completedWords, dropLastChange, endsWord, MAX_LIVE_TEXT, nextChange, normalize } from "@/lib/live/text";
 import { cn } from "@/lib/utils";
 import { keyOf, type LiveFacts, type LiveTransport, type RenderOut, type RenderReq, type TransportStatus } from "./live-transport";
 import { idbDel, idbGet, idbPrune, idbPut } from "./live-store";
+import { LiveMirror } from "./live-mirror";
 
 /**
  * Live edit: change a picture as you type. One prompt keeps growing, and every frame renders the whole of it on the
@@ -49,8 +52,9 @@ import { idbDel, idbGet, idbPrune, idbPut } from "./live-store";
  * the text on screen at full quality (the settled frame). Enter ends a change (", ") and Undo drops the newest one.
  * Start fresh stores the picture on screen as a lossless master, makes it the new start and clears the words (Undo
  * brings them back). Hold C to compare with the picture before the words (Shift+C: the original); B paints a region
- * to change. The owner's lab switch (?lab=1) brings back stacking, where Enter keeps each change as a step. Two
- * shells: the full-screen app (/live-edit) and a panel in the Edit studio.
+ * to change. The owner's lab switch (?lab=1) brings back stacking, where Enter keeps each change as a step. Mirror (M)
+ * opens the camera: the person's expression, read in the browser as a few words, drives live frames of the same
+ * picture (src/lib/live/mirror.ts). Two shells: the full-screen app (/live-edit) and a panel in the Edit studio.
  */
 
 export interface LiveEditorProps {
@@ -223,6 +227,15 @@ export function LiveEditor(props: LiveEditorProps) {
   const [keptFlash, setKeptFlash] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [highvramHint, setHighvramHint] = useState(() => load<boolean>(HIGHVRAM_HINT) !== false);
+  /** Renders in flight by key, for a caller that waits on one (Mirror's pacing). */
+  const pending = useRef(new Map<string, Promise<MirrorDone>>());
+
+  // Mirror: the camera drives the words (the box waits).
+  const [mirror, setMirror] = useState(false);
+  const mirrorRef = useRef(false);
+  const pacer = useRef(new MirrorPacer());
+  /** Mirror was asked for before there was a picture: it starts once one is added. */
+  const mirrorAfterAdd = useRef(false);
 
   // Compare and tools.
   const [hold, setHold] = useState<"prev" | "orig" | null>(null);
@@ -295,7 +308,7 @@ export function LiveEditor(props: LiveEditorProps) {
     void transport.render(req, onEvent).then(() => setBusy((b) => (b?.what === "warming" ? null : b)));
   };
   /** The newest handlers, for effects and timers. */
-  const latest = useRef({ warm, render: (() => {}) as (slot: "live" | "settle", t: string, o?: { urgent?: boolean }) => void, schedule: (() => {}) as (t: string, typed?: string, whole?: boolean) => void, addFile: (async () => {}) as (f: File) => Promise<void> });
+  const latest = useRef({ warm, render: (() => {}) as (slot: "live" | "settle", t: string, o?: { urgent?: boolean }) => void, schedule: (() => {}) as (t: string, typed?: string, whole?: boolean) => void, addFile: (async () => {}) as (f: File) => Promise<void>, pumpMirror: () => {} });
 
   useEffect(() => {
     let alive = true;
@@ -427,48 +440,55 @@ export function LiveEditor(props: LiveEditorProps) {
     toast.error(error);
   };
 
-  /** A live or settle render of this text (skipped when it is on screen, in flight, or cached). */
-  const render = (slot: "live" | "settle", t: string, o: { urgent?: boolean } = {}) => {
-      if (pausedRef.current) return;
-      if (!normalize(t) && !stack.current.head) return;
+  /**
+   * A live or settle render of this text (skipped when it is on screen, in flight, or cached). Answers once the frame
+   * is in (or was already there), dropped, or failed.
+   */
+  const render = (slot: "live" | "settle", t: string, o: { urgent?: boolean } = {}): Promise<MirrorDone> => {
+      if (pausedRef.current) return Promise.resolve("dropped");
+      if (!normalize(t) && !stack.current.head) return Promise.resolve("ok");
       if (!normalize(t)) {
         // An empty box shows the kept picture.
         showMaster(stack.current.head);
-        return;
+        return Promise.resolve("ok");
       }
       const req = reqFor(slot, t, o);
       const key = keyOf(req);
-      if (shownKey.current === key) return;
+      if (shownKey.current === key) return Promise.resolve("ok");
       const alias = slot === "live" ? keyOf({ ...req, size: 0 }) : "";
       const hadKey = cache.current.has(key) ? key : alias && anySize.current.get(alias);
       const had = hadKey ? cache.current.get(hadKey) : undefined;
       if (had && hadKey) {
         present(had, req.seq, hadKey);
-        return;
+        return Promise.resolve("ok");
       }
       // A settled picture of the same text can stand in for a live frame.
       const settledKey = keyOf({ ...req, slot: "settle" });
       const settled = slot === "live" ? cache.current.get(settledKey) : undefined;
       if (settled) {
         present(settled, req.seq, settledKey);
-        return;
+        return Promise.resolve("ok");
       }
       const going = inflight.current.get(key);
       if (going !== undefined) {
         if (o.urgent) transport.hurry(going);
-        return;
+        return pending.current.get(key) ?? Promise.resolve("ok");
       }
       inflight.current.set(key, req.seq);
       const baseAtStart = req.base;
       setBusy((b) => b ?? { what: "rendering", since: performance.now() });
       const sent = performance.now();
-      void transport.render(req, onEvent).then((res) => {
+      const done = transport.render(req, onEvent).then((res): MirrorDone => {
         trace({ slot, seq: req.seq, sent, got: performance.now(), ms: res.ok ? res.out.ms : undefined, outcome: res.ok ? "frame" : "dropped" in res ? `dropped:${res.dropped}` : "error" });
         inflight.current.delete(key);
+        pending.current.delete(key);
         if (!inflight.current.size) setBusy((b) => (b?.what === "rendering" ? null : b));
         if (!res.ok) {
-          if ("error" in res) failed(res.error, res.code);
-          return;
+          if ("error" in res) {
+            failed(res.error, res.code);
+            return "error";
+          }
+          return "dropped";
         }
         const out = res.out;
         const url = URL.createObjectURL(new Blob([out.data as BlobPart], { type: out.type }));
@@ -484,9 +504,65 @@ export function LiveEditor(props: LiveEditorProps) {
         }
         setLastMs(out.ms);
         // A frame for a base that is no longer the head doesn't show.
-        if (baseAtStart !== stack.current.base()?.name) return;
+        if (baseAtStart !== stack.current.base()?.name) return "dropped";
         present(c, req.seq, key);
+        return "ok";
       });
+      pending.current.set(key, done);
+      return done;
+  };
+
+  /** Mirror: the newest expression renders once nothing of Mirror's is in flight (one at a time, only on a change). */
+  const pumpMirror = () => {
+    if (!mirrorRef.current || pausedRef.current) return;
+    const phrase = pacer.current.take();
+    if (phrase === null) return;
+    void render("live", mirrorPrompt(phrase), { urgent: true }).then((o) => {
+      pacer.current.done(o);
+      latest.current.pumpMirror();
+    });
+  };
+
+  const onMirrorPhrase = useCallback((phrase: string) => {
+    pacer.current.want(phrase);
+    latest.current.pumpMirror();
+  }, []);
+
+  const startMirror = () => {
+    if (phase.s !== "ready") return;
+    if (!stack.current.head) {
+      // Mirror changes a picture: once one is added, it starts.
+      mirrorAfterAdd.current = true;
+      toast.message("Add a picture of your character", { description: "Mirror starts as soon as it is in." });
+      fileInput.current?.click();
+      return;
+    }
+    clearTimeout(idle.current);
+    clearTimeout(settle.current);
+    transport.cancel((_, slot) => slot === "live" || slot === "settle");
+    pacer.current.reset();
+    mirrorRef.current = true;
+    setMirror(true);
+  };
+
+  const stopMirror = () => {
+    mirrorAfterAdd.current = false;
+    if (!mirrorRef.current) return;
+    mirrorRef.current = false;
+    setMirror(false);
+    pacer.current.reset();
+    transport.cancel((_, slot) => slot === "live" || slot === "settle");
+    // Back to the words, or the picture they start from.
+    if (normalize(textRef.current)) schedule(textRef.current, undefined, true);
+    else showMaster(stack.current.head);
+  };
+  const toggleMirror = () => (mirrorRef.current ? stopMirror() : startMirror());
+
+  /** The base changed (a new picture, undo, a fresh start): Mirror's newest expression renders on it. */
+  const mirrorOnNewBase = () => {
+    if (!mirrorRef.current) return;
+    pacer.current.resend();
+    pumpMirror();
   };
 
 
@@ -503,14 +579,15 @@ export function LiveEditor(props: LiveEditorProps) {
   }, [status.running, status.online, phase.s]);
 
   // Coming back from a pause (live switched on, the tab in view again, the connection back): the newest text renders,
-  // and settles.
+  // and settles (with Mirror on, the newest expression).
   useEffect(() => {
-    if (!paused && phase.s === "ready" && normalize(textRef.current)) latest.current.schedule(textRef.current, undefined, true);
+    if (!paused && phase.s === "ready" && (mirrorRef.current || normalize(textRef.current))) latest.current.schedule(textRef.current, undefined, true);
   }, [paused, phase.s]);
 
   const schedule = (t: string, typed?: string, whole = false) => {
       clearTimeout(idle.current);
       clearTimeout(settle.current);
+      if (mirrorRef.current) return pumpMirror();
       // A word boundary, a line break or a paste: the words so far render at once (all of them, for a paste, an undo
       // or a redo).
       if (whole || typed === undefined || (typed.length === 1 && endsWord(typed)) || typed.length > 1) {
@@ -712,7 +789,8 @@ export function LiveEditor(props: LiveEditorProps) {
       try {
         await ensureStaged(step);
       } catch {}
-      if (normalize(textRef.current)) {
+      if (mirrorRef.current) mirrorOnNewBase();
+      else if (normalize(textRef.current)) {
         if (compose) schedule(textRef.current, undefined, true);
         else render("live", textRef.current, { urgent: true });
       }
@@ -764,7 +842,8 @@ export function LiveEditor(props: LiveEditorProps) {
   const shuffle = () => {
     seedRef.current = Math.floor(Math.random() * 2 ** 31);
     setSeed(seedRef.current);
-    if (normalize(textRef.current)) render("live", textRef.current, { urgent: true });
+    if (mirrorRef.current) mirrorOnNewBase();
+    else if (normalize(textRef.current)) render("live", textRef.current, { urgent: true });
   };
 
   // ---------------------------------------------------------------------------
@@ -793,7 +872,11 @@ export function LiveEditor(props: LiveEditorProps) {
         bump();
         showMaster(stack.current.head);
         warm(st.name);
-        if (normalize(textRef.current)) schedule(textRef.current);
+        if (mirrorAfterAdd.current) {
+          mirrorAfterAdd.current = false;
+          startMirror();
+        } else if (mirrorRef.current) mirrorOnNewBase();
+        else if (normalize(textRef.current)) schedule(textRef.current);
         if (variant === "app") {
           const u = new URL(window.location.href);
           u.searchParams.set("image", asset.url);
@@ -806,7 +889,7 @@ export function LiveEditor(props: LiveEditorProps) {
       }
   };
   useEffect(() => {
-    latest.current = { warm, render, schedule, addFile };
+    latest.current = { warm, render, schedule, addFile, pumpMirror };
   });
 
   useEffect(() => {
@@ -826,7 +909,8 @@ export function LiveEditor(props: LiveEditorProps) {
     try {
       const st = await transport.stageBytes(await dataUrlBytes(r.mask), "mask");
       setMask({ name: st.name, preview: r.overlay });
-      if (normalize(textRef.current)) render("live", textRef.current, { urgent: true });
+      if (mirrorRef.current) mirrorOnNewBase();
+      else if (normalize(textRef.current)) render("live", textRef.current, { urgent: true });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -908,7 +992,7 @@ export function LiveEditor(props: LiveEditorProps) {
     else toast.error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't save");
   };
 
-  const canKeep = !!normalize(text) && phase.s === "ready" && !keeping;
+  const canKeep = !!normalize(text) && phase.s === "ready" && !keeping && !mirror;
 
   // ---------------------------------------------------------------------------
   // Keys
@@ -934,6 +1018,7 @@ export function LiveEditor(props: LiveEditorProps) {
         box.current?.focus();
       } else if (k === "r" || k === "R") shuffle();
       else if (k === "l" || k === "L") toggleLive();
+      else if (k === "m" || k === "M") toggleMirror();
       else if (k === "c" || k === "C") setHold(e.shiftKey ? "orig" : "prev");
       else if ((k === "b" || k === "B") && hasPicture) setBrushOpen(true);
       else if (k === "d" || k === "D") void download();
@@ -986,7 +1071,7 @@ export function LiveEditor(props: LiveEditorProps) {
     if (busy?.what === "adding") return { tone: "busy", text: "Adding the picture…" };
     if (!liveOn) return { tone: "off", text: "Live off" };
     if (keptFlash) return { tone: "ok", text: compose ? "Fresh start ✓" : "Kept ✓" };
-    const label = link ? "Live (slower over a link)" : "Live";
+    const label = mirror ? "Mirror" : link ? "Live (slower over a link)" : "Live";
     // A kept picture's size is on its badge; the pill tells the live size and time only for live and settled frames.
     if (!shown || shown.kind === "master") return { tone: busy ? "busy" : "ok", text: label };
     const size = shown.kind === "live" ? sizeShown : Math.max(shown.w, shown.h);
@@ -1038,7 +1123,7 @@ export function LiveEditor(props: LiveEditorProps) {
           <ToolButton label="Compare" keys="hold C" onClick={() => setCompareOpen(true)} disabled={!previous && !original} className="max-sm:hidden">
             <ArrowLeftRight />
           </ToolButton>
-          <ToolButton label="Shuffle" keys="R" onClick={shuffle} disabled={!normalize(text)} className="max-sm:hidden">
+          <ToolButton label="Shuffle" keys="R" onClick={shuffle} disabled={!normalize(text) && !mirror} className="max-sm:hidden">
             <Shuffle />
           </ToolButton>
           <ToolButton label={mask ? "Change the painted region" : "Paint a region"} keys="B" onClick={() => setBrushOpen(true)} disabled={!hasPicture} active={!!mask} className="max-sm:hidden">
@@ -1046,6 +1131,9 @@ export function LiveEditor(props: LiveEditorProps) {
           </ToolButton>
           <ToolButton label={liveOn ? "Live on" : "Live off"} keys="L" onClick={toggleLive} active={!liveOn} className="max-sm:hidden">
             {liveOn ? <Zap /> : <ZapOff />}
+          </ToolButton>
+          <ToolButton label={mirror ? "Stop Mirror" : "Mirror: the picture copies your expression"} keys="M" onClick={toggleMirror} disabled={phase.s !== "ready"} active={mirror} className="max-sm:hidden">
+            <ScanFace />
           </ToolButton>
           <Settings
             liveChoice={liveChoice}
@@ -1062,12 +1150,14 @@ export function LiveEditor(props: LiveEditorProps) {
             setMethod={setMethod}
             onKeys={() => setKeysOpen(true)}
             phone={{
-              shuffle: normalize(text) ? shuffle : undefined,
+              shuffle: normalize(text) || mirror ? shuffle : undefined,
               brush: hasPicture ? () => setBrushOpen(true) : undefined,
               brushLabel: mask ? "Change the painted region" : "Paint a region",
               compare: previous || original ? () => setCompareOpen(true) : undefined,
               liveOn,
               toggleLive,
+              mirror,
+              toggleMirror: phase.s === "ready" ? toggleMirror : undefined,
               download: current ? () => void download() : undefined,
               save: !embedded && props.canSave && canHandOn ? () => void saveToLibrary() : undefined,
               fullScreen: embedded ? `/live-edit${image ? `?image=${encodeURIComponent(image)}&from=edit` : "?from=edit"}` : undefined,
@@ -1107,26 +1197,29 @@ export function LiveEditor(props: LiveEditorProps) {
         </div>
       </header>
 
-      {/* Stage */}
-      <div className={cn("relative mx-3 min-h-0 flex-1 overflow-hidden rounded-2xl bg-media sm:mx-4", dragging && "ring-2 ring-primary")} data-live-stage onPointerDown={(e) => e.pointerType !== "mouse" && setHold("prev")} onPointerUp={() => setHold(null)} onPointerLeave={() => setHold(null)}>
-        {setupPanel ?? errorPanel ?? (stageUrl ? <StageImage src={stageUrl} alt={hold ? "The picture before this change" : "Your picture"} /> : <EmptyStage busy={busy?.what === "adding"} compose={compose} onBrowse={() => fileInput.current?.click()} />)}
-        {mask && !hold && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={mask.preview} alt="" className="pointer-events-none absolute inset-0 size-full object-contain opacity-35 mix-blend-screen" />
-        )}
-        {stageUrl && phase.s === "ready" && (
-          <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white tabular-nums backdrop-blur" data-live-badge>
-            {hold
-              ? hold === "orig"
-                ? "Original"
-                : "Before"
-              : shown?.kind === "master"
-                ? `${shown.w}×${shown.h} · ${compose ? (head?.parent ? "fresh start" : "original") : "kept ✓"}`
-                : shown?.kind === "settled"
-                  ? `${shown.w}×${shown.h} · ${compose ? "full quality" : "ready to keep"}`
-                  : `${sizeShown} · live`}
-          </span>
-        )}
+      {/* Stage (with Mirror on, the self-view beside it) */}
+      <div className="mx-3 flex min-h-0 flex-1 flex-col gap-2 sm:mx-4 sm:flex-row sm:gap-3">
+        <div className={cn("relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-media", dragging && "ring-2 ring-primary")} data-live-stage onPointerDown={(e) => e.pointerType !== "mouse" && setHold("prev")} onPointerUp={() => setHold(null)} onPointerLeave={() => setHold(null)}>
+          {setupPanel ?? errorPanel ?? (stageUrl ? <StageImage src={stageUrl} alt={hold ? "The picture before this change" : "Your picture"} /> : <EmptyStage busy={busy?.what === "adding"} compose={compose} onBrowse={() => fileInput.current?.click()} />)}
+          {mask && !hold && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={mask.preview} alt="" className="pointer-events-none absolute inset-0 size-full object-contain opacity-35 mix-blend-screen" />
+          )}
+          {stageUrl && phase.s === "ready" && (
+            <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white tabular-nums backdrop-blur" data-live-badge>
+              {hold
+                ? hold === "orig"
+                  ? "Original"
+                  : "Before"
+                : shown?.kind === "master"
+                  ? `${shown.w}×${shown.h} · ${compose ? (head?.parent ? "fresh start" : "original") : "kept ✓"}`
+                  : shown?.kind === "settled"
+                    ? `${shown.w}×${shown.h} · ${compose ? "full quality" : "ready to keep"}`
+                    : `${sizeShown} · live`}
+            </span>
+          )}
+        </div>
+        {mirror && phase.s === "ready" && <LiveMirror onPhrase={onMirrorPhrase} onStop={stopMirror} />}
       </div>
 
       {/* Steps, the box, tries */}
@@ -1140,7 +1233,7 @@ export function LiveEditor(props: LiveEditorProps) {
               value={text}
               rows={1}
               maxLength={MAX_LIVE_TEXT}
-              placeholder={hasPicture ? (compose ? "Type a change, then keep adding…" : head?.parent ? "Type the next change…" : "Type a change…") : "Describe a picture, or drop one here…"}
+              placeholder={mirror ? "Mirror is on: your expression changes the picture" : hasPicture ? (compose ? "Type a change, then keep adding…" : head?.parent ? "Type the next change…" : "Type a change…") : "Describe a picture, or drop one here…"}
               aria-label="Type a change"
               className="block max-h-28 min-h-11 w-full resize-none bg-transparent px-3.5 py-3 text-[15px] leading-5 outline-none placeholder:text-muted-foreground [field-sizing:content]"
               onChange={(e) => {
@@ -1159,7 +1252,7 @@ export function LiveEditor(props: LiveEditorProps) {
                   void keep(undefined, e.metaKey || e.ctrlKey);
                 } else if (e.key === "Escape") box.current?.blur();
               }}
-              disabled={phase.s !== "ready"}
+              disabled={phase.s !== "ready" || mirror}
             />
           </div>
           {compose ? (
@@ -1179,7 +1272,7 @@ export function LiveEditor(props: LiveEditorProps) {
             </Button>
           )}
         </div>
-        {(tries.length > 0 || hasPicture) && (
+        {(tries.length > 0 || hasPicture) && !mirror && (
           // The row keeps its height from the start, so the picture doesn't move when the first try comes in.
           <div className="mt-2 flex h-[46px] items-center gap-1.5 overflow-x-auto pb-0.5" data-live-tries={tries.length > 0 ? "" : undefined}>
             <span className="shrink-0 text-[11.5px] font-medium text-muted-foreground">{compose ? "Takes" : "Tries"}</span>
@@ -1408,6 +1501,8 @@ function Settings(p: {
     compare?: () => void;
     liveOn: boolean;
     toggleLive: () => void;
+    mirror: boolean;
+    toggleMirror?: () => void;
     download?: () => void;
     save?: () => void;
     fullScreen?: string;
@@ -1465,6 +1560,10 @@ function Settings(p: {
           <button type="button" className={item} onClick={act(ph.toggleLive)} aria-pressed={!ph.liveOn}>
             {ph.liveOn ? <ZapOff /> : <Zap />}
             {ph.liveOn ? "Pause live" : "Live on"}
+          </button>
+          <button type="button" className={item} onClick={act(ph.toggleMirror)} disabled={!ph.toggleMirror} aria-pressed={ph.mirror}>
+            <ScanFace />
+            {ph.mirror ? "Stop Mirror" : "Mirror: copy your expression"}
           </button>
           <button type="button" className={item} onClick={act(ph.download)} disabled={!ph.download}>
             <Download />
@@ -1570,6 +1669,7 @@ const COMPOSE_KEYS: [string, string][] = [
   ["F", "Start fresh from this picture"],
   ["R", "Shuffle: another take of the words"],
   ["L", "Live on or off"],
+  ["M", "Mirror: the picture copies your expression"],
   ["C (hold)", "Compare with the picture before the words"],
   ["Shift+C (hold)", "Compare with the original"],
   ["B", "Paint a region to change"],
@@ -1587,6 +1687,7 @@ const KEYS: [string, string][] = [
   ["Ctrl+Shift+Z", "Redo"],
   ["R", "Shuffle: another take of this change"],
   ["L", "Live on or off"],
+  ["M", "Mirror: the picture copies your expression"],
   ["C (hold)", "Compare with the step before"],
   ["Shift+C (hold)", "Compare with the original"],
   ["B", "Paint a region to change"],

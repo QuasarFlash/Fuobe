@@ -163,7 +163,7 @@ function LiveShowcase({ kind }: { kind: "guest" | "connect" | "unsupported" }) {
             Type a change and watch the picture follow, then keep adding to the same words. Every frame renders all of them on your original, so nothing blurs, however many changes you make.
           </p>
           <ul className="mt-4 space-y-1.5 text-[13.5px]">
-            {["Live frames as you type, on your own GPU", "One prompt that keeps growing", "Undo a change, or start fresh from the picture", "Paint a region to change only that"].map((t) => (
+            {["Live frames as you type, on your own GPU", "One prompt that keeps growing", "Undo a change, or start fresh from the picture", "Paint a region to change only that", "Mirror: a character copies your expression from your camera"].map((t) => (
               <li key={t} className="flex items-center gap-2">
                 <Sparkles className="size-3.5 shrink-0 text-primary" />
                 {t}
