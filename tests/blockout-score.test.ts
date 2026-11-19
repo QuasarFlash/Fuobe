@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BLOCKOUT, EXAMPLE_SCENE, emptyScene, normalizeScene } from "@/lib/blockout";
-import { SCORE, applyScore, parseScore, scoreFileName, scoreFromScene, scoreText, validateScore } from "@/lib/blockout-score";
+import { SCORE, SCORE_EXAMPLE, applyScore, parseScore, scoreFileName, scoreFromScene, scoreText, validateScore } from "@/lib/blockout-score";
 
 /** The Blockout score: a scene's timeline as a text file, read back with plain messages, and brought in as a scene. */
 
@@ -64,6 +64,13 @@ describe("parseScore", () => {
     const { score, notes } = ok(JSON.stringify({ duration: 4, actors: [{ name: "A", keys: [{ t: 0, position: [0, 0, 0] }, { t: 9, position: [1, 0, 0] }] }] }));
     expect(score.duration).toBe(4);
     expect(notes).toEqual(["1 key after the end (4 s) lands on the last frame."]);
+  });
+
+  it("reads the example the help shows", () => {
+    const { score, notes } = ok(SCORE_EXAMPLE);
+    expect(notes).toEqual([]);
+    expect(score).toMatchObject({ duration: 6, aspect: "16:9", actors: [{ name: "Mara" }], markers: [{ t: 3, label: "She turns" }] });
+    expect(score.camera!.map((k) => k.lens)).toEqual([28, 50]);
   });
 
   it("strips a byte-order mark and blank space", () => {

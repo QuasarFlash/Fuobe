@@ -341,3 +341,21 @@ export function scoreFileName(name: string): string {
     .slice(0, 48);
   return `${slug || "blockout"}.score.json`;
 }
+
+/** A short score, as the help shows it. */
+export const SCORE_EXAMPLE = `{
+  "score": 1,
+  "duration": 6,
+  "aspect": "16:9",
+  "camera": [
+    { "t": 0, "position": [0, 1.6, 4], "target": [0, 1.2, 0], "lens": 28 },
+    { "t": 6, "position": [2, 1.4, 1], "target": [0, 1.2, -2], "lens": 50 }
+  ],
+  "actors": [
+    { "name": "Mara", "keys": [
+      { "t": 0, "position": [0, 0, 0] },
+      { "t": 6, "position": [0, 0, -3] }
+    ] }
+  ],
+  "markers": [{ "t": 3, "label": "She turns" }]
+}`;

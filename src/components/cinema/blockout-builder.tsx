@@ -1,7 +1,7 @@
 "use client";
 
-import { Box, Camera, Clapperboard, DoorOpen, Eye, Flag, Footprints, Loader2, Move3d, Pause, Play, Plus, RotateCw, Shapes, SquareDashed, Trash2, Video, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Camera, Clapperboard, DoorOpen, Download, Eye, FileUp, Film, Flag, Footprints, Loader2, Maximize2, Move3d, Orbit, Pause, Play, Plus, RotateCw, Shapes, SquareDashed, Trash2, Video, Volume2, VolumeX, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -15,6 +15,7 @@ import {
   EXAMPLE_SCENE,
   OPEN_FPS,
   PRIMS,
+  aspectOf,
   blockoutSize,
   cameraAt,
   cameraKeyAt,
@@ -29,9 +30,12 @@ import {
   type PrimKind,
   type Vec3,
 } from "@/lib/blockout";
+import { SCORE, applyScore, parseScore, scoreFileName, scoreFromScene, scoreText } from "@/lib/blockout-score";
+import { CLIP_SHIFT, timelineKey } from "@/lib/blockout-staging";
 import { cn } from "@/lib/utils";
 import { toastError } from "@/lib/refusals";
-import type { BlockoutEngine, ViewMode } from "./blockout-engine";
+import type { BlockoutEngine, PaneRect, ViewMode } from "./blockout-engine";
+import { ClipPicker, ReferenceClipVideo, ScoreHelp, type ReferenceClip } from "./blockout-staging";
 
 /**
  * Blockout to film, the builder (package blockout-film): place grey boxes, walls, a doorway, stairs, a door, a mannequin
@@ -67,6 +71,9 @@ const ADD: { kind: PrimKind; icon: typeof Box }[] = [
 ];
 const ASPECTS = ["16:9", "21:9", "4:3", "1:1", "9:16"];
 const fmt = (t: number) => `${t.toFixed(1)} s`;
+/** Where the timeline leaves keys alone: fields take every key, buttons take Space, the slider takes Home and End. */
+const TYPING = "input, textarea, select, [contenteditable]";
+const PRESSABLE = "button, a, summary, [role=radio], [role=tab], [role=menuitem], [role=checkbox], [role=switch]";
 const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -149,6 +156,17 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
   const tRef = useRef(t);
   const abort = useRef<AbortController | null>(null);
   const meshes = useAssets(undefined, "model3d");
+  const [ready, setReady] = useState(false);
+  // The staging view: its two panes, the reference clip (where it starts on the blockout's clock) and the score file.
+  const [framePane, setFramePane] = useState<HTMLDivElement | null>(null);
+  const [godPane, setGodPane] = useState<HTMLDivElement | null>(null);
+  const [clip, setClip] = useState<ReferenceClip | null>(null);
+  const [clipStart, setClipStart] = useState(0);
+  const [startDraft, setStartDraft] = useState<string | null>(null);
+  const [clipMuted, setClipMuted] = useState(true);
+  const [clipOver, setClipOver] = useState(false);
+  const scoreInput = useRef<HTMLInputElement>(null);
+  useEffect(() => (clip?.local ? () => URL.revokeObjectURL(clip.src) : undefined), [clip]);
   useEffect(() => {
     sceneRef.current = scene;
     tRef.current = t;
@@ -171,6 +189,7 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
         eng.setTime(tRef.current);
         const r = canvasEl.getBoundingClientRect();
         eng.resize(r.width, r.height);
+        setReady(true);
       })
       .catch((e) => setError(/webgl|context/i.test(String((e as Error)?.message)) ? "This browser can't show 3D here (WebGL is off). Try another browser, or upload a render from your 3D app." : String((e as Error)?.message ?? e)));
     return () => {
@@ -190,7 +209,27 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
 
   useEffect(() => engineRef.current?.setScene(scene), [scene]);
   useEffect(() => engineRef.current?.setTime(t), [t]);
-  useEffect(() => engineRef.current?.setMode(mode), [mode]);
+  useEffect(() => engineRef.current?.setMode(mode), [mode, ready]);
+
+  // The staging panes as the page lays them out, in the canvas's own pixels.
+  const staging = mode === "stage";
+  useEffect(() => {
+    const eng = engineRef.current;
+    if (!eng || !staging || !canvasEl) return;
+    const measure = () => {
+      const c = canvasEl.getBoundingClientRect();
+      const rect = (el: HTMLElement | null): PaneRect | null => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height };
+      };
+      eng.setPanes(rect(framePane), rect(godPane));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const el of [canvasEl, framePane, godPane]) if (el) ro.observe(el);
+    return () => ro.disconnect();
+  }, [ready, staging, canvasEl, framePane, godPane, clip, clipOver]);
   useEffect(() => engineRef.current?.setGizmo(gizmo), [gizmo]);
   useEffect(() => engineRef.current?.select(selected), [selected]);
 
@@ -266,6 +305,48 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
 
   const shotNow = useMemo(() => cameraAt(scene.camera, t), [scene.camera, t]);
 
+  const exportScore = () => {
+    const url = URL.createObjectURL(new Blob([scoreText(scoreFromScene(scene))], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = scoreFileName(scene.name);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const importScore = async (f: File) => {
+    if (f.size > SCORE.maxChars * 4) return toast.error(`This score is too big: a score file holds up to ${SCORE.maxChars / 1024} KB.`);
+    const read = parseScore(await f.text().catch(() => ""));
+    if (!read.ok) return toast.error("Couldn't import that score", { description: read.error });
+    const { scene: next, moved, added, dropped } = applyScore(sceneRef.current, read.score);
+    setPlaying(false);
+    setScene(next);
+    setT(0);
+    setSelected(null);
+    const parts = [read.score.camera?.length ? `${read.score.camera.length} camera key${read.score.camera.length === 1 ? "" : "s"}` : "", moved ? `${moved} piece${moved === 1 ? "" : "s"} moved` : "", added ? `${added} actor${added === 1 ? "" : "s"} added` : ""].filter(Boolean);
+    const notes = [...read.notes, ...(dropped ? [`${dropped} actor${dropped === 1 ? " was" : "s were"} left out: a blockout holds up to ${BLOCKOUT.maxPrims} pieces.`] : [])];
+    toast.success(`Score imported: ${[...parts, fmt(next.duration)].join(" · ")}`, notes.length ? { description: notes.join(" ") } : undefined);
+  };
+
+  // A pane of the staging view: on a wide screen it takes the frame's shape (the engine letterboxes it either way).
+  const pane = cn("relative min-h-0 min-w-0 overflow-hidden md:aspect-(--frame-ar) md:w-full md:flex-none", clip && !clipOver ? "md:max-h-[calc(50%-2px)]" : "md:max-h-full");
+
+  const togglePlay = () => (t >= scene.duration ? (setT(0), setPlaying(true)) : setPlaying((p) => !p));
+
+  // The timeline from the keyboard (Space or K, comma and full stop, J and L, Home and End) wherever a field, button
+  // or slider doesn't use the key itself; the arrow keys stay with the slider and the 3D view.
+  const onTimelineKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || busy) return;
+    const el = e.target instanceof Element ? e.target : null;
+    if (el?.closest(TYPING) || (e.key === " " && el?.closest(PRESSABLE)) || ((e.key === "Home" || e.key === "End") && el?.closest("[role=slider]"))) return;
+    const next = timelineKey(e.key, t, scene.duration);
+    if (next === null) return;
+    e.preventDefault();
+    if (next === "toggle") return togglePlay();
+    setPlaying(false);
+    setT(next);
+  };
+
   const render = async () => {
     const eng = engineRef.current;
     if (!eng || busy) return;
@@ -301,21 +382,22 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
 
   return (
     <Dialog open onOpenChange={(v) => !v && !busy && onClose(scene)}>
-      <DialogContent showCloseButton={false} className="flex h-[100svh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none md:flex-row" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent showCloseButton={false} className="flex h-[100svh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none md:flex-row" onOpenAutoFocus={(e) => e.preventDefault()} onKeyDown={onTimelineKey}>
         <DialogTitle className="sr-only">Blockout builder</DialogTitle>
         <DialogDescription className="sr-only">Place grey boxes, a mannequin and the camera, key their moves and the beats, then render the blockout.</DialogDescription>
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#161617]">
           <div className="flex items-center gap-2 px-3 py-2 text-white">
-            <Clapperboard className="size-4 shrink-0" aria-hidden />
+            <Clapperboard className="hidden size-4 shrink-0 sm:block" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[14px] font-medium">Blockout builder</p>
-              <p className="truncate text-[11.5px] text-white/65">{mode === "edit" ? "Drag to orbit · click a piece to move it" : "Through the shot camera"}</p>
+              <p className="truncate text-[11.5px] text-white/65">{mode === "edit" ? "Drag to orbit · click a piece to move it" : mode === "shot" ? "Through the shot camera" : "The camera's view beside the set seen from outside"}</p>
             </div>
             <div className="inline-flex h-8 shrink-0 rounded-full bg-white/10 p-0.5" role="radiogroup" aria-label="View">
               {(
                 [
                   ["edit", "Build", Move3d],
                   ["shot", "Shot", Video],
+                  ["stage", "Staging", Orbit],
                 ] as const
               ).map(([id, label, Icon]) => (
                 <button
@@ -324,9 +406,9 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
                   role="radio"
                   aria-checked={mode === id}
                   onClick={() => setMode(id)}
-                  className={cn("inline-flex items-center gap-1 rounded-full px-2.5 text-[12.5px] font-medium", mode === id ? "bg-white text-black" : "text-white/80 hover:text-white")}
+                  className={cn("inline-flex items-center gap-1 rounded-full px-2 text-[12.5px] font-medium sm:px-2.5", mode === id ? "bg-white text-black" : "text-white/80 hover:text-white")}
                 >
-                  <Icon className="size-3.5" /> {label}
+                  <Icon className="hidden size-3.5 sm:block" /> {label}
                 </button>
               ))}
             </div>
@@ -334,12 +416,38 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
               <X className="size-[18px]" />
             </button>
           </div>
-          <div ref={setStageEl} className="relative min-h-[26svh] flex-1 overflow-hidden">
+          <div ref={setStageEl} className={cn("relative flex-1 overflow-hidden", staging ? "min-h-[38svh]" : "min-h-[26svh]")}>
             <canvas ref={setCanvasEl} tabIndex={0} aria-label="Blockout 3D view: drag to orbit, scroll to zoom, arrow keys to move the view, click a piece to select it" className="absolute inset-0 size-full touch-none outline-none" />
             {mode === "shot" && (
               <span className="pointer-events-none absolute top-2 left-2 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
                 {scene.aspect} · {Math.round(shotNow.lens)} mm · {fmt(t)}
               </span>
+            )}
+            {staging && (
+              // The panes over the one canvas: the engine draws the viewfinder and the outside view where these sit.
+              // The viewfinder pane takes the pointer, so a drag there doesn't turn the outside view.
+              <div className="pointer-events-none absolute inset-0 grid grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)] gap-1 p-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] md:grid-rows-1">
+                <div className={cn("grid min-h-0 min-w-0 gap-1 md:flex md:flex-col md:justify-center", clip && !clipOver && "grid-cols-2")} style={{ "--frame-ar": String(aspectOf(scene.aspect)) } as CSSProperties}>
+                  <div ref={setFramePane} role="img" aria-label={`The camera's view at ${fmt(t)}: ${Math.round(shotNow.lens)} mm`} className={cn(pane, "pointer-events-auto")}>
+                    {clip && clipOver && <ReferenceClipVideo clip={clip} t={t} playing={playing} start={clipStart} muted={clipMuted} className="absolute inset-0 opacity-50" />}
+                    <span className="absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
+                      Camera · {Math.round(shotNow.lens)} mm · {fmt(t)}
+                    </span>
+                  </div>
+                  {clip && !clipOver && (
+                    <div className={cn(pane, "pointer-events-auto bg-black")}>
+                      <ReferenceClipVideo clip={clip} t={t} playing={playing} start={clipStart} muted={clipMuted} />
+                      <span className="absolute top-1.5 left-1.5 max-w-[calc(100%-12px)] truncate rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white/90">Reference · {clip.name}</span>
+                    </div>
+                  )}
+                </div>
+                <div ref={setGodPane} className="relative min-h-0 min-w-0">
+                  <span className="absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white/90">The set from outside · drag to orbit</span>
+                  <button type="button" onClick={() => engineRef.current?.frameAll()} className="pointer-events-auto absolute top-1 right-1 grid size-8 place-items-center rounded-full bg-black/55 text-white hover:bg-black/75" aria-label="Show the whole set">
+                    <Maximize2 className="size-3.5" />
+                  </button>
+                </div>
+              </div>
             )}
             {error && <p className="absolute inset-x-4 top-4 rounded-lg bg-black/70 p-3 text-[13px] text-white">{error}</p>}
             {busy && (
@@ -360,11 +468,11 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
           {/* The timeline: play, scrub, the camera keys (amber) and the beat markers (blue). */}
           <div className="space-y-1.5 border-t border-white/10 px-3 py-2 text-white">
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => (t >= scene.duration ? (setT(0), setPlaying(true)) : setPlaying((p) => !p))} className="grid size-8 shrink-0 place-items-center rounded-full bg-white/12 hover:bg-white/20" aria-label={playing ? "Pause" : "Play"}>
+              <button type="button" onClick={togglePlay} className="grid size-8 shrink-0 place-items-center rounded-full bg-white/12 hover:bg-white/20" aria-label={playing ? "Pause" : "Play"}>
                 {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
               </button>
               <div className="relative min-w-0 flex-1">
-                <Slider value={[t]} min={0} max={scene.duration} step={1 / BLOCKOUT.fps} onValueChange={([v]) => (setPlaying(false), setT(v))} aria-label="Playhead" />
+                <Slider value={[t]} min={0} max={scene.duration} step={1 / BLOCKOUT.fps} onValueChange={([v]) => (setPlaying(false), setT(v))} aria-label="Playhead" aria-valuetext={`${fmt(t)} of ${fmt(scene.duration)}`} />
                 {keyTicks(scene.camera, "bg-amber-400")}
                 {keyTicks(scene.markers, "bg-sky-400 ring-2 ring-[#161617]")}
               </div>
@@ -381,10 +489,70 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
                 <Plus className="size-3" /> Marker at {fmt(t)}
               </button>
             </div>
+            {staging && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-white/10 pt-2 text-[12px]">
+                {/* The reference clip: footage to match the blocking to, in step with the playhead. */}
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label="Reference clip">
+                  <ClipPicker onPick={(c) => (setClip(c), setClipStart(0))}>
+                    <button type="button" className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/12 px-2.5 whitespace-nowrap hover:bg-white/20">
+                      <Film className="size-3.5" /> {clip ? "Change clip" : "Add a reference clip"}
+                    </button>
+                  </ClipPicker>
+                  {clip && (
+                    <>
+                      <label className="inline-flex items-center gap-1 text-white/80">
+                        Starts at
+                        <Input
+                          type="number"
+                          step={0.1}
+                          min={-CLIP_SHIFT}
+                          max={CLIP_SHIFT}
+                          value={startDraft ?? clipStart}
+                          onChange={(e) => {
+                            setStartDraft(e.target.value);
+                            const n = Number(e.target.value);
+                            if (e.target.value.trim() !== "" && Number.isFinite(n)) setClipStart(Math.max(-CLIP_SHIFT, Math.min(CLIP_SHIFT, r2(n))));
+                          }}
+                          onBlur={() => setStartDraft(null)}
+                          className="h-7 w-[4.5rem] border-white/20 bg-transparent px-1.5 text-[12px] text-white tabular-nums"
+                          aria-describedby="clip-start-hint"
+                        />
+                        s
+                      </label>
+                      <span id="clip-start-hint" className="sr-only">
+                        Where the clip begins on the blockout&rsquo;s timeline. Below zero, the clip begins before the blockout.
+                      </span>
+                      <button type="button" onClick={() => setClipStart(r2(t))} className="h-7 shrink-0 rounded-full px-2 whitespace-nowrap text-white/85 hover:bg-white/10">
+                        Start it at {fmt(t)}
+                      </button>
+                      <button type="button" aria-pressed={clipOver} onClick={() => setClipOver((v) => !v)} className={cn("h-7 shrink-0 rounded-full px-2.5 whitespace-nowrap", clipOver ? "bg-white text-black" : "bg-white/12 hover:bg-white/20")}>
+                        Over the camera view
+                      </button>
+                      <button type="button" onClick={() => setClipMuted((m) => !m)} className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-white/10" aria-label={clipMuted ? "Turn the clip's sound on" : "Turn the clip's sound off"}>
+                        {clipMuted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                      </button>
+                      <button type="button" onClick={() => setClip(null)} className="grid size-7 shrink-0 place-items-center rounded-full hover:bg-white/10" aria-label="Remove the reference clip">
+                        <X className="size-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="ml-auto flex items-center gap-1.5" role="group" aria-label="Score">
+                  <button type="button" onClick={() => scoreInput.current?.click()} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/12 px-2.5 whitespace-nowrap hover:bg-white/20">
+                    <FileUp className="size-3.5" /> Import score
+                  </button>
+                  <button type="button" onClick={exportScore} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/12 px-2.5 whitespace-nowrap hover:bg-white/20">
+                    <Download className="size-3.5" /> Export score
+                  </button>
+                  <ScoreHelp />
+                </div>
+                <p className="hidden w-full text-[11px] text-white/55 md:block">Space plays or pauses · comma and full stop step one frame · J and L step one second</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <aside className="flex max-h-[46svh] min-h-0 w-full shrink-0 flex-col border-t bg-background md:max-h-none md:w-[340px] md:border-t-0 md:border-l">
+        <aside className={cn("flex min-h-0 w-full shrink-0 flex-col border-t bg-background md:max-h-none md:w-[340px] md:border-t-0 md:border-l", staging ? "max-h-[30svh]" : "max-h-[46svh]")}>
           <Tabs defaultValue="build" className="flex min-h-0 flex-1 flex-col gap-0">
             <TabsList className="mx-3 mt-3 grid grid-cols-4">
               <TabsTrigger value="build">Build</TabsTrigger>
@@ -453,6 +621,21 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
                   <Button size="sm" variant="ghost" onClick={() => (setScene(emptyScene()), setT(0), setSelected(null))}>
                     Start empty
                   </Button>
+                </div>
+                <div className="space-y-1.5 rounded-lg bg-muted/60 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[12.5px] font-medium">Score</p>
+                    <ScoreHelp />
+                  </div>
+                  <p className="text-[12px] text-muted-foreground">The camera moves, actor paths and markers as a text file. Staging plays it beside a reference clip.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" variant="secondary" onClick={() => scoreInput.current?.click()}>
+                      <FileUp className="size-3.5" /> Import
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={exportScore}>
+                      <Download className="size-3.5" /> Export
+                    </Button>
+                  </div>
                 </div>
                 <ul className="space-y-0.5" aria-label="Pieces">
                   {scene.prims.map((p) => (
@@ -595,6 +778,7 @@ export default function BlockoutBuilder({ initial, onClose, onDone }: BlockoutBu
             </Button>
             <p className="mt-1.5 text-center text-[11.5px] text-muted-foreground">Renders in your browser: the grey box and its depth, {fmt(scene.duration)}</p>
           </div>
+          <input ref={scoreInput} type="file" accept=".json,application/json,text/plain" hidden onChange={(e) => (e.target.files?.[0] && void importScore(e.target.files[0]), (e.target.value = ""))} />
         </aside>
       </DialogContent>
     </Dialog>
