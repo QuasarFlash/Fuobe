@@ -138,6 +138,18 @@ const H3_IMAGE_PROMPT_HELPER: NonNullable<ModelOptions["controls"]>[number] = {
   labels: { off: "Off · your words as typed", on: "On · writes a fuller caption first (takes 1.5–2 min longer)" },
 };
 
+/**
+ * MiniMax H3 Image's Quality on your GPU: Standard is the model's own 6 steps; Fast runs the -fast graph (the pDMD 2-step LoRA,
+ * a 2 GB file of its own, at 2 steps). The graph is picked per run (src/lib/comfy-variants.ts, H3_IMAGE_FAST_GRAPH).
+ */
+const H3_IMAGE_QUALITY: NonNullable<ModelOptions["controls"]>[number] = {
+  param: "quality",
+  label: "Quality",
+  values: ["standard", "fast"],
+  default: "standard",
+  labels: { standard: "Standard · 6 steps", fast: "Fast · 2 steps (extra 2 GB file)" },
+};
+
 type OpenSpec = Omit<ModelDef, "engine" | "badges"> & { badges?: ModelDef["badges"] };
 const o = (m: OpenSpec): ModelDef => ({ ...m, engine: "open", badges: ["open", ...(m.badges ?? [])] });
 
@@ -298,9 +310,9 @@ const open: ModelDef[] = [
     defaults: { aspectRatio: "1:1", resolution: "1K" },
   }),
 
-  // MiniMax H3 Image: text to image and edits with up to 5 pictures (<Picture 1> is the one edited), 6 steps. Tuned for 2048 x
-  // 2048 of area: 2K (about 4 MP) by default, 4K (about 16 MP) as Max. The edit follows Picture 1's shape at about 4 MP. Its
-  // Prompt helper is opt-in. Not a default anywhere (the current picks stay).
+  // MiniMax H3 Image: text to image and edits with up to 5 pictures (<Picture 1> is the one edited), 6 steps, or 2 with Quality →
+  // Fast. Tuned for 2048 x 2048 of area: 2K (about 4 MP) by default, 4K (about 16 MP) as Max. The edit follows Picture 1's shape
+  // at about 4 MP. Its Prompt helper is opt-in. Not a default anywhere (the current picks stay).
   o({
     id: "oss-minimax-h3-image",
     name: "MiniMax H3 Image",
@@ -319,7 +331,7 @@ const open: ModelDef[] = [
       resolutionLabels: { "4K": "4K · Max" },
       maxImages: 5,
       seed: true,
-      controls: [H3_IMAGE_PROMPT_HELPER],
+      controls: [H3_IMAGE_QUALITY, H3_IMAGE_PROMPT_HELPER],
     },
     defaults: { aspectRatio: "1:1", resolution: "2K" },
   }),

@@ -772,13 +772,22 @@ export const PROMPT_HELPER_GRAPHS: ReadonlySet<string> = new Set([
   "kandinsky6-i2av",
   "minimax-h3-image-t2i",
   "minimax-h3-image-edit",
+  "minimax-h3-image-t2i-fast",
+  "minimax-h3-image-edit-fast",
 ]);
 
 /**
  * Prompt helper graphs whose helper runs only when asked ("on"): Kandinsky 6.0's (Kandinsky6BeautifyPrompt on a 19 GB Qwen3.5
  * 9B file), off by default on both engines as on fal, and MiniMax H3 Image's (TextGenerateV2 on a 7.3 GB Qwen3.5 9B, thinking on).
  */
-export const PROMPT_HELPER_OPT_IN: ReadonlySet<string> = new Set(["kandinsky6-t2av", "kandinsky6-i2av", "minimax-h3-image-t2i", "minimax-h3-image-edit"]);
+export const PROMPT_HELPER_OPT_IN: ReadonlySet<string> = new Set([
+  "kandinsky6-t2av",
+  "kandinsky6-i2av",
+  "minimax-h3-image-t2i",
+  "minimax-h3-image-edit",
+  "minimax-h3-image-t2i-fast",
+  "minimax-h3-image-edit-fast",
+]);
 
 /** The file an opt-in helper loads (an optional file of its graph): a run with the helper on needs it on that ComfyUI. */
 export const PROMPT_HELPER_FILES: Readonly<Record<string, string>> = {
@@ -786,6 +795,8 @@ export const PROMPT_HELPER_FILES: Readonly<Record<string, string>> = {
   "kandinsky6-i2av": "text_encoders/qwen3.5_9b_bf16.safetensors",
   "minimax-h3-image-t2i": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
   "minimax-h3-image-edit": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+  "minimax-h3-image-t2i-fast": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+  "minimax-h3-image-edit-fast": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
 };
 
 /** params.extra.promptHelper: "on" (the graph's default) or "off". */

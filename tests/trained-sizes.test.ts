@@ -46,7 +46,7 @@ describe("trained size tables in the manifest", () => {
 
   it("are the models with verified sizes, and only those", () => {
     expect(tabled.map((w) => w.id).sort()).toEqual(
-      [...QWEN21, ...KREA2, ...FLUX1, "qwen-image-2512-t2i", "qwen-image-2512-t2i-lightning", "hidream-i1-dev-t2i", "sdxl-t2i", "minimax-h3-image-t2i"].sort(),
+      [...QWEN21, ...KREA2, ...FLUX1, "qwen-image-2512-t2i", "qwen-image-2512-t2i-lightning", "hidream-i1-dev-t2i", "sdxl-t2i", "minimax-h3-image-t2i", "minimax-h3-image-t2i-fast"].sort(),
     );
     // No verified guidance yet: unchanged.
     for (const id of ["flux3-klein-t2i", "style-ref-flux2-klein-4b", "style-ref-qwen-edit-2511", "z-image-turbo-t2i", "moss-image-t2i", "ideogram4-t2i", "flux2-dev-t2i"]) {

@@ -15,11 +15,13 @@ import { allowedNodeList, inputRules, readCatalog } from "../scripts/lib/worker-
 import { tempDir } from "./helpers/temp-dir";
 
 // MiniMax H3 Image on your GPU: two core-node graphs from Comfy-Org's image_minimax_h3_image templates, an opt-in Prompt helper
-// (TextGenerateV2 → JsonExtractString) that is taken out when off, the edit's resize chain, and 2K / 4K canvases.
+// (TextGenerateV2 → JsonExtractString) that is taken out when off, the edit's resize chain, 2K / 4K canvases, and Quality → Fast
+// (the same graphs with the pDMD 2-step LoRA).
 process.env.FUOBE_DATA_DIR = tempDir("fuobe-h3-image-");
 process.env.COMFYUI_URL = "http://comfy.test:8188";
 const { prepareWorkflow } = await import("@/server/providers/comfyui");
 const { STUDIO_ROWS } = await import("@/server/gpu/tools");
+const { H3_IMAGE_FAST_GRAPH, requestWorkflowId, resolveWorkflowId } = await import("@/lib/comfy-variants");
 
 const root = path.resolve(__dirname, "..");
 const dir = path.join(root, "workflows/comfyui");
@@ -308,5 +310,94 @@ describe("a worker takes MiniMax H3 Image's graphs", () => {
   it("refuses a model file that isn't verified on it", async () => {
     const g = (await prepare(T2I, { prompt: "x" }, "t2i")) as unknown as Graph;
     expect(graphCheck(g, allowed, verified.filter((v) => v.name !== "minimax_h3_image_pruned_int8_convrot.safetensors"), { rules, staged: [] })?.reason).toBe("model-unverified");
+  });
+
+  it("takes the Fast graphs with the helper on and off, and refuses one while the LoRA isn't verified or is another file", async () => {
+    for (const promptHelper of ["off", "on"]) {
+      const t2i = (await prepare(`${T2I}-fast`, { prompt: "a neon sign", aspectRatio: "1:1", resolution: "4K", extra: { promptHelper } }, "t2i")) as unknown as Graph;
+      const edit = (await prepare(`${EDIT}-fast`, { prompt: "In <Picture 1>, add a hat", images: ["fuobe_abcdefgh01.png"], extra: { promptHelper } }, "edit")) as unknown as Graph;
+      for (const g of [t2i, edit]) expect(graphCheck(g, allowed, verified, { rules, staged: sent(g) }), promptHelper).toBeNull();
+    }
+    const g = (await prepare(`${T2I}-fast`, { prompt: "x" }, "t2i")) as unknown as Graph;
+    expect(graphCheck(g, allowed, verified.filter((v) => v.name !== "minimax_h3_pdmd_2nfe_comfyui.safetensors"), { rules, staged: [] })?.reason).toBe("model-unverified");
+    const other = structuredClone(g);
+    other["50"].inputs.lora_name = "another_lora.safetensors";
+    expect(graphCheck(other, allowed, verified, { rules, staged: [] })).not.toBeNull();
+  });
+});
+
+describe("MiniMax H3 Image's Fast option (the pDMD 2-step LoRA)", () => {
+  const FAST: Record<string, string> = { [T2I]: `${T2I}-fast`, [EDIT]: `${EDIT}-fast` };
+  const LORA = "minimax_h3_pdmd_2nfe_comfyui.safetensors";
+  const LORA_URL = `https://huggingface.co/akhaliq/minimax-h3-image-pdmd-2step/resolve/ef1e3b9a237fc7a57ba4d07174ecca397d695d8a/${LORA}`;
+  const has = (id: string) => manifest.workflows.some((w) => w.id === id);
+
+  it("is the base graph with the LoRA at 1.0, the flow shift of 12 and 2 steps; the rest is the base graph's", () => {
+    const rest = (wf: ComfyWorkflow) =>
+      Object.fromEntries(Object.entries(wf).filter(([id]) => !["7", "50", "51"].includes(id)).map(([id, n]) => [id, id === "9" ? { ...n, inputs: { ...n.inputs, filename_prefix: "" } } : n]));
+    for (const [base, fast] of Object.entries(FAST)) {
+      const g = graph(fast);
+      expect(g["50"], fast).toMatchObject({ class_type: "LoraLoaderModelOnly", inputs: { lora_name: LORA, strength_model: 1, model: ["1", 0] } });
+      expect(g["51"], fast).toMatchObject({ class_type: "MiniMaxH3SigmaShift", inputs: { model: ["50", 0], shift_video: 12, shift_audio: 3 } });
+      expect(g["7"].inputs, fast).toEqual({ model: ["51", 0], positive: ["5", 0], negative: ["6", 0], latent_image: ["5", 1], seed: 0, steps: 2, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1 });
+      expect(rest(g), fast).toEqual(rest(graph(base)));
+      const e = entry(fast);
+      expect(e, fast).toMatchObject({ customNodes: [], vramGb: 32, outputs: [{ node: "9", kind: "image" }], capability: entry(base).capability, source: `derived from ${base} (see notes)` });
+      expect(e.bindings, fast).toEqual(entry(base).bindings);
+      expect(e.limits, fast).toEqual(entry(base).limits);
+      expect(e.license, fast).toMatch(/ · pDMD 2-NFE LoRA Apache-2\.0$/);
+      expect(licenceInfo(e.license!)).toMatchObject({ name: "MiniMax-H3-Image Community License", class: "regions" });
+      expect(PROMPT_HELPER_GRAPHS.has(fast) && PROMPT_HELPER_OPT_IN.has(fast), fast).toBe(true);
+      expect(PROMPT_HELPER_FILES[fast]).toBe(HELPER_FILE);
+      expect(isH3Graph(fast), fast).toBe(false);
+    }
+    expect(entry(FAST[T2I]).sizes).toEqual(entry(T2I).sizes);
+  });
+
+  it("pins the LoRA by revision, size and SHA-256, next to the base graph's files", () => {
+    expect(pins[LORA_URL]).toEqual({ revision: "ef1e3b9a237fc7a57ba4d07174ecca397d695d8a", sizeBytes: 1956194168, sha256: "5feaeef13df31f98f36364a95e7ce9e8ff0afd71570d1c53d7c3be599e3a0f22" });
+    for (const [base, fast] of Object.entries(FAST)) {
+      const r = requirements.workflows[fast];
+      expect([...r.files].sort(), fast).toEqual([...requirements.workflows[base].files, `loras/${LORA}`].sort());
+      expect(r.optional, fast).toEqual([HELPER_FILE]);
+      expect(r.core, fast).toEqual(expect.arrayContaining(["LoraLoaderModelOnly", "MiniMaxH3SigmaShift"]));
+      expect(r.packs, fast).toEqual({});
+      expect(entry(fast).models.find((m) => m.file === LORA)?.url, fast).toBe(LORA_URL);
+    }
+  });
+
+  it("Quality → Fast runs the -fast graph for text to image and edits; Standard, or a library without it, keeps the 6-step graph", () => {
+    const run = (endpoint: string, extra: Record<string, unknown>, h = has) =>
+      resolveWorkflowId(endpoint, { op: endpoint === EDIT ? "edit" : "t2i", clips: 0, images: endpoint === EDIT ? 1 : 0, audio2: false, extra, has: h });
+    for (const [base, fast] of Object.entries(FAST)) {
+      expect(H3_IMAGE_FAST_GRAPH[base]).toBe(fast);
+      expect(run(base, { quality: "fast" })).toBe(fast);
+      expect(run(base, { quality: "standard" })).toBe(base);
+      expect(run(base, {})).toBe(base);
+      expect(run(base, { quality: "fast" }, () => false)).toBe(base);
+    }
+    // From a planned request, as the provider and the GPU pre-flight resolve it.
+    expect(requestWorkflowId(T2I, plan({ modelId: MODEL, params: { extra: { quality: "fast" } } }), { op: "t2i", has }).id).toBe(FAST[T2I]);
+    expect(requestWorkflowId(T2I, plan({ modelId: MODEL }), { op: "t2i", has }).id).toBe(T2I);
+  });
+
+  it("offers Quality in the catalog: Standard by default, Fast with its extra file named, no price", () => {
+    const quality = getModel(MODEL)!.options.controls!.find((c) => c.param === "quality")!;
+    expect(quality).toMatchObject({ values: ["standard", "fast"], default: "standard" });
+    expect(quality.labels).toEqual({ standard: "Standard · 6 steps", fast: "Fast · 2 steps (extra 2 GB file)" });
+    expect(quality.sets).toBeUndefined();
+    expect(JSON.stringify(quality)).not.toMatch(/\$|price|credit/i);
+  });
+
+  it("prepares the Fast graphs with the helper off and on, the LoRA kept either way", async () => {
+    const t2i = await prepare(FAST[T2I], { prompt: "a perfume bottle on wet black stone", aspectRatio: "16:9", resolution: "2K" }, "t2i");
+    expect([t2i["50"]?.class_type, t2i["51"]?.class_type, t2i["7"].inputs.model, t2i["7"].inputs.steps, t2i["7"].inputs.seed]).toEqual(["LoraLoaderModelOnly", "MiniMaxH3SigmaShift", ["51", 0], 2, 7]);
+    expect([t2i["5"].inputs.width, t2i["5"].inputs.height]).toEqual([2720, 1536]);
+    expect(t2i["5"].inputs.prompt).toEqual(["4", 0]);
+    for (const n of HELPER_NODES) expect(t2i[n], n).toBeUndefined();
+    const on = await prepare(FAST[EDIT], { prompt: "In <Picture 1>, make the gown liquid silver", images: ["gown.png"], extra: { promptHelper: "on" } }, "edit");
+    expect(on["5"].inputs.prompt).toEqual(["12", 0]);
+    expect(on["50"].inputs.lora_name).toBe(LORA);
+    expect(on["20"].inputs.image).toBe("gown.png");
   });
 });

@@ -24,6 +24,15 @@ export const CAMERA_POSE_GRAPH: Record<string, string> = { "wan22-i2v-14b": "wan
  */
 export const PRODUCT_SHOT_GRAPH: Record<string, string> = { "qwen-image-21-edit": "product-shot-qwen-edit-2509" };
 
+/**
+ * MiniMax H3 Image's Quality control: "fast" (params.extra.quality) runs the graph with the pDMD 2-step LoRA, 2 steps in place
+ * of the model's 6.
+ */
+export const H3_IMAGE_FAST_GRAPH: Record<string, string> = {
+  "minimax-h3-image-t2i": "minimax-h3-image-t2i-fast",
+  "minimax-h3-image-edit": "minimax-h3-image-edit-fast",
+};
+
 /** MiniMax H3's Quality control: "best" (params.extra.quality) runs the 20-step graph without the turbo LoRA. */
 export const H3_BEST_GRAPH: Record<string, string> = {
   "minimax-h3-t2v": "minimax-h3-t2v-hq",
@@ -148,6 +157,9 @@ export function resolveWorkflowId(endpointTemplate: string, r: VariantRequest): 
   endpoint = qwen21Graph(endpoint, r.extra, r.has);
   // Qwen-Image-Edit 2511: Options → Speed's Fast graph unless the run asks for Best (src/lib/qwen-edit-speed.ts).
   endpoint = qwenEditGraph(endpoint, r.extra, r.has);
+  // MiniMax H3 Image: Quality → Fast runs its 2-step graph.
+  const h3ImageFast = H3_IMAGE_FAST_GRAPH[endpoint];
+  if (h3ImageFast && r.extra.quality === "fast" && r.has(h3ImageFast)) endpoint = h3ImageFast;
   // MiniMax H3: an orbit runs the Orbit LoRA graph (whatever the quality or tier). Else Quality → Fast · Pika Flex runs its
   // 6-step graph: Pika's bf16 adapters ride on the full fl2va int8 model, so Flex is the full model's alone, and it wins over a
   // smaller card's tier. The plan sees to it that the two never meet here by chance (src/server/h3-gpu.ts): Flex with Auto keeps

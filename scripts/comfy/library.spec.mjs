@@ -703,6 +703,8 @@ export const KNOWN_MODELS = {
   'minimax_h3_image_pruned_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/892de7cb61df49753bf15145a711154803a355cb/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors' },
   'minimax_h3_image_vae_fp16.safetensors': { folder: 'vae', url: 'https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/892de7cb61df49753bf15145a711154803a355cb/vae/minimax_h3_image_vae_fp16.safetensors' },
   'qwen3vl_32b_minimax_h3_int8_convrot.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/54472221d27c695fca9621b0c3ed52f06c4af707/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors' },
+  // Its Fast option (minimax-h3-image-*-fast): the pDMD 2-NFE LoRA in ComfyUI's key layout (Apache-2.0), at the card's revision.
+  'minimax_h3_pdmd_2nfe_comfyui.safetensors': { folder: 'loras', url: 'https://huggingface.co/akhaliq/minimax-h3-image-pdmd-2step/resolve/ef1e3b9a237fc7a57ba4d07174ecca397d695d8a/minimax_h3_pdmd_2nfe_comfyui.safetensors' },
   'qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy/resolve/feef60b0aaf63a4773ace96636ebbcf43b881312/text_encoders/qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors', variants: ['qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors', 'qwen3.5_9b_flux3_prompt_upsampler_bf16.safetensors'] },
 };
 
@@ -732,6 +734,48 @@ const H3_IMAGE_NOTES =
   'reads its expanded_caption. Off, skipPromptHelper links the conditioning\'s prompt to the "Your words" node and the helper\'s nodes go. ' +
   'The model is tuned for 2048 x 2048 of area (about 4 MP) and works up to about 16 MP (4096 x 4096 at 1:1). VRAM: measured on a 32 GB card ' +
   '(the DiT is 21 GB and the encoder 27 GB; ComfyUI offloads the encoder after it runs).';
+
+/** MiniMax H3 Image's Fast graphs: the 6-step graph with the pDMD 2-NFE LoRA at 1.0, its flow shift, and 2 steps. */
+const H3_IMAGE_FAST_LORA = 'minimax_h3_pdmd_2nfe_comfyui.safetensors';
+function h3ImageFast(base, title, entry) {
+  return {
+    id: `${base}-fast`,
+    title,
+    capability: base.endsWith('-edit') ? 'edit' : 't2i',
+    derive: base,
+    transforms: [
+      {
+        op: 'addNodes',
+        nodes: {
+          50: { class_type: 'LoraLoaderModelOnly', inputs: { lora_name: H3_IMAGE_FAST_LORA, strength_model: 1.0, model: ['1', 0] }, _meta: { title: 'pDMD 2-step LoRA (strength 1.0)' } },
+          51: { class_type: 'MiniMaxH3SigmaShift', inputs: { model: ['50', 0], shift_video: 12, shift_audio: 3 }, _meta: { title: 'Flow shift 12 (the LoRA\'s grid)' } },
+        },
+      },
+      { op: 'removeNodes', ids: ['7'] },
+      {
+        op: 'addNodes',
+        nodes: {
+          7: {
+            class_type: 'KSampler',
+            inputs: { model: ['51', 0], positive: ['5', 0], negative: ['6', 0], latent_image: ['5', 1], seed: 0, steps: 2, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1 },
+            _meta: { title: 'Sampler (2 steps, CFG 1, euler / simple)' },
+          },
+        },
+      },
+    ],
+    outputs: [{ node: '9', kind: 'image' }],
+    optionalModels: ['qwen3.5_9b_w4a8_gptq.safetensors'],
+    vramGb: 32,
+    license: `${H3_IMAGE_LICENSE} · pDMD 2-NFE LoRA Apache-2.0`,
+    notes:
+      `${base} with akhaliq/minimax-h3-image-pdmd-2step's ComfyUI LoRA (minimax_h3_pdmd_2nfe_comfyui) on LoraLoaderModelOnly at strength 1.0 (the card: another ` +
+      'strength scales the distillation delta), then MiniMaxH3SigmaShift (shift_video 12, shift_audio 3): the LoRA samples a plain flow grid, where the stock ' +
+      'image model samples its own PDD grid. 2 steps, euler / simple, denoise 1; CFG 1 skips the negative pass, the same as the card\'s BasicGuider (guidance-distilled, ' +
+      'no negative). The conditioning, canvas, pictures and Prompt helper are the base graph\'s. The card\'s ComfyUI workflows are text to image; its demo runs ' +
+      'edits at 2 steps on the same LoRA. Its optional detail pass (a half-size draft, upscaled, then 3 steps at denoise about 0.45) is not part of these graphs.',
+    ...entry,
+  };
+}
 
 // MiniMax H3 video (minimax-h3-*): licence and note text the seven graphs share.
 const H3_LICENSE =
@@ -1394,6 +1438,19 @@ export const SPEC = [
       'height, so the result keeps Picture 1\'s shape at about 4 MP. Pictures not given are left out from the last (the conditioning takes them as optional ' +
       'inputs). The prompt names them <Picture 1> ... <Picture 5>. With the helper on, TextGenerateV2 also looks at Picture 1 (images.image1).',
   },
+  // Quality -> Fast (params.extra.quality "fast"; src/lib/comfy-variants.ts): the same graphs with the pDMD 2-step LoRA.
+  h3ImageFast('minimax-h3-image-t2i', 'MiniMax H3 Image text to image, Fast (2 steps with the pDMD LoRA; about 4 MP by default, up to 16 MP)', {
+    bindings: { prompt: [b('4', 'value')], width: [b('5', 'width')], height: [b('5', 'height')], seed: [b('7', 'seed'), b('11', 'sampling_mode.seed')] },
+    limits: { maxWidth: 6272, maxHeight: 6272, dimensionMultiple: 32 },
+    sizes: H3_IMAGE_SIZES,
+  }),
+  h3ImageFast('minimax-h3-image-edit', 'MiniMax H3 Image edit with up to 5 pictures, Fast (2 steps with the pDMD LoRA)', {
+    bindings: {
+      prompt: [b('4', 'value')], image: [b('20', 'image')], image2: [b('21', 'image')], image3: [b('22', 'image')], image4: [b('23', 'image')],
+      image5: [b('24', 'image')], seed: [b('7', 'seed'), b('11', 'sampling_mode.seed')],
+    },
+    limits: { maxImages: 5 },
+  }),
   {
     id: 'qwen-image-edit-2509',
     optionalModels: ['qwen_image_edit_2509_int8_convrot.safetensors'],

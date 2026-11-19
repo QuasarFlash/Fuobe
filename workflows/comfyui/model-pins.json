@@ -1184,6 +1184,11 @@
   "sizeBytes": 344061264,
   "sha256": "b10e6231bebc4852d921f168366fdb0f495ff867bcabd592a0626ca11dba7561"
  },
+ "https://huggingface.co/akhaliq/minimax-h3-image-pdmd-2step/resolve/ef1e3b9a237fc7a57ba4d07174ecca397d695d8a/minimax_h3_pdmd_2nfe_comfyui.safetensors": {
+  "revision": "ef1e3b9a237fc7a57ba4d07174ecca397d695d8a",
+  "sizeBytes": 1956194168,
+  "sha256": "5feaeef13df31f98f36364a95e7ce9e8ff0afd71570d1c53d7c3be599e3a0f22"
+ },
  "https://huggingface.co/akhaliq/Qwen-Image-2.1-Next-Scene-LoRA/resolve/67ce88cd413fe177758af5d91e25eb3a334aa06f/next_scene_step2500.safetensors": {
   "revision": "67ce88cd413fe177758af5d91e25eb3a334aa06f",
   "sizeBytes": 335605648,
