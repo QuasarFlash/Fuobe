@@ -1449,6 +1449,11 @@
   "sizeBytes": 884915688,
   "sha256": "3100fd296d2991f4859db9d83c43ece45f432659b06db3d79810dad033c62253"
  },
+ "https://huggingface.co/1038lab/RMBG-3.0/resolve/f8aa73a836ceeb9c8840e8dc70878b69a7114b78/RMBG-3.0-bf16.safetensors": {
+  "revision": "f8aa73a836ceeb9c8840e8dc70878b69a7114b78",
+  "sizeBytes": 16254753314,
+  "sha256": "a864baf0379d355982142a5577e96d82486fc6ee1628aa3ce363ae93f7f8296a"
+ },
  "https://huggingface.co/1038lab/FeyNobg/resolve/59dd27c65909b7dcc2de8c3239712b0b997c3e41/FeyNobg.safetensors": {
   "revision": "59dd27c65909b7dcc2de8c3239712b0b997c3e41",
   "sizeBytes": 1051353168,

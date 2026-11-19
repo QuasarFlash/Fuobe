@@ -205,6 +205,9 @@ export const STUDIO_ROWS: StudioRowDef[] = [
       { modelId: "oss-minimax-h3-image", op: "edit" },
     ],
   },
+  // Layers → Remove background's finest cut-out: Bria's RMBG-3.0 (its own 16 GB transformer with FIBO 2's encoder and VAE, a
+  // 32 GB card), which the other cut-out models don't load.
+  { href: "/layers", label: "Remove background · RMBG-3.0", group: "Images", steps: [{ modelId: "oss-rmbg3", op: "bg-remove" }] },
   { href: "/upscale", label: "Upscale", group: "Images", config: S.UPSCALE_STUDIO },
   // hi3d-refine: Image to 3D with "Refine detail · Hi3D 1.0": the default open model, then Hi3D's refine of its mesh.
   {

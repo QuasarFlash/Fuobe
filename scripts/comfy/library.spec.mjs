@@ -684,6 +684,9 @@ export const KNOWN_MODELS = {
   'fibo2_dev_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/Fibo-2.0/resolve/main/diffusion_models/fibo2_dev_int8_convrot.safetensors', variants: ['fibo2_dev_bf16.safetensors'] },
   'fibo2_edit_turbo_int8_convrot.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/Comfy-Org/Fibo-2.0/resolve/main/diffusion_models/fibo2_edit_turbo_int8_convrot.safetensors', variants: ['fibo2_edit_turbo_bf16.safetensors'] },
   'qwen3vl_4b_int8_convrot.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/Fibo-2.0/resolve/main/text_encoders/qwen3vl_4b_int8_convrot.safetensors' },
+  // RMBG-3.0 (bg-remove-rmbg3): Bria's FIBO 2 transformer fine-tuned for alpha mattes, as one bf16 file in ComfyUI's key layout
+  // (1038lab's repack; scripts/convert-rmbg3.mjs makes the same bytes from Bria's four diffusers shards).
+  'RMBG-3.0-bf16.safetensors': { folder: 'diffusion_models', url: 'https://huggingface.co/1038lab/RMBG-3.0/resolve/f8aa73a836ceeb9c8840e8dc70878b69a7114b78/RMBG-3.0-bf16.safetensors' },
   'qwen3.5_9b_int8_convrot.safetensors': { folder: 'text_encoders', url: 'https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors', variants: ['qwen3.5_9b_bf16.safetensors'] },
   // FLUX 3 Image Klein (research #10 §6.3, nm10-flux3-klein): BFL's ComfyUI repack, gated "auto" (accept the FLUX Kommunity
   // License on Hugging Face, then a token downloads it), pinned to the revision read on 2026-11-01. Its Qwen3-VL-4B int8 encoder and
@@ -1723,6 +1726,28 @@ export const SPEC = [
     notes:
       'AILab_FeyNoBg (ComfyUI-RMBG 3.3.0): a 263M Swin-L matting model for hair, fur, glass and lace, no trimap; refine_foreground on (sub-pixel edge refinement), background Alpha -> RGBA PNG. ' +
       'Needs the nobg Python package (the pack\'s requirements.txt: nobg>=0.3.1). The class is recorded from ComfyUI-RMBG\'s source at the pinned commit.',
+  },
+  {
+    id: 'bg-remove-rmbg3',
+    title: 'Remove background (Bria RMBG-3.0: a soft alpha matte from FIBO 2 Edit Turbo, 4 steps)',
+    capability: 'bg-remove',
+    handBuilt: 'hand-built/bg-remove-rmbg3.json',
+    bindings: { image: [b('1', 'image')] },
+    outputs: [{ node: '13', kind: 'image' }],
+    limits: { maxWidth: 4096, maxHeight: 4096 },
+    vramGb: 32,
+    license:
+      'CC-BY-NC-4.0 (Bria RMBG-3.0 weights, non-commercial; 1038lab\'s single-file repack carries the same terms); Qwen3-VL-4B text encoder Apache-2.0; ' +
+      'FLUX.2 VAE Apache-2.0',
+    notes:
+      'fibo2-edit-turbo-edit with RMBG-3.0\'s transformer (briaai/RMBG-3.0 at 87330e3f, a fine-tune of FIBO 2.0 Edit Turbo) and the card\'s fixed instruction, ' +
+      'word for word, as the card sends it ({"edit_instruction": ...}): another or no instruction makes a coloured picture, not a matte. Core nodes only. ' +
+      'TextEncodeFibo2 takes the picture as image 1 and makes the latent at FIBO 2\'s trained size for its shape (about 1 MP, centre-cropped, as Bria\'s ' +
+      'pipeline does); 4 steps, CFG 1 (no negative pass), euler / simple, seed 0 as on the card. The decoded matte (white = the subject, grey = partly see-through) ' +
+      'is scaled to the picture\'s size with lanczos (GetImageSize, ImageScale), read as a mask from its red channel, inverted for JoinImageWithAlpha, and ' +
+      'joined to the original picture as its alpha: a transparent PNG at full size. ComfyUI\'s UNETLoader reads one file whose names follow its FIBO 2 layout ' +
+      '(fused qkv, to_kv and w13), not Bria\'s four diffusers shards: RMBG-3.0-bf16.safetensors is that file. VRAM: the card measured a 28.5 GiB peak in bf16 ' +
+      'for the whole pipeline; the transformer alone is 15.1 GiB.',
   },
   {
     id: 'face-swap-reactor',

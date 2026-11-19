@@ -109,6 +109,8 @@ describe("round-4 ComfyUI workflows", () => {
       // Green screen and fine hair (nm10-keying): ComfyUI-RMBG 3.3.0 and the CorridorKey wrapper aren't on the validation
       // server (tests/keying.test.ts checks their classes against the packs' source).
       "image-matte-feynobg",
+      // Bria's RMBG-3.0 cut-out: core nodes, unvalidated until its /prompt check with its 16 GB file (tests/rmbg3.test.ts).
+      "bg-remove-rmbg3",
       // MiniMax H3 on 8-31 GB cards: FastH3 V2 and Trim, unvalidated like the H3 graphs until a GPU run.
       "minimax-h3-trim-t2v",
       // Design a voice: ComfyUI-QwenTTS and ComfyUI-VoxCPM2 aren't on the validation server (tests/voice-design-server.test.ts).

@@ -729,6 +729,19 @@ const open: ModelDef[] = [
     routes: [comfy("bg-remove", "image-matte-feynobg")],
     options: {},
   }),
+  // Image cut-outs at their finest: Bria's RMBG-3.0, a FIBO 2 Edit Turbo fine-tune that draws a soft alpha matte in 4 steps,
+  // applied to the picture at full size (bg-remove-rmbg3).
+  o({
+    id: "oss-rmbg3",
+    name: "Bria RMBG-3.0",
+    vendor: "Bria",
+    family: "bria",
+    kind: "image",
+    tagline: "The finest cut-outs: every person kept, holes and mesh cleared, soft natural edges · 32 GB GPU",
+    badges: ["new", "top"],
+    routes: [comfy("bg-remove", "bg-remove-rmbg3", "RMBG-3.0 matte in 4 steps, applied at full size")],
+    options: {},
+  }),
 
   // ---------------- Video
   // MiniMax H3: text, image and start + end frame to video with its own sound, on the fl2va model. Standard runs larryvrh's

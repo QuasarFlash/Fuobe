@@ -1,0 +1,200 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "input.png"
+    },
+    "_meta": {
+      "title": "Picture (image)"
+    }
+  },
+  "2": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "RMBG-3.0-bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "RMBG-3.0 (FIBO 2 Edit Turbo fine-tune, bf16)"
+    }
+  },
+  "3": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+      "type": "fibo2",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Qwen3-VL 4B (FIBO 2 encoder, int8)"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": {
+      "title": "FLUX.2 VAE"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeFibo2",
+    "inputs": {
+      "clip": [
+        "3",
+        0
+      ],
+      "prompt": "{\"edit_instruction\": \"Generate a detailed grayscale alpha matte. Map the opaque foreground to white and the background to black. Produce soft, anti-aliased grayscale gradients at the edges of the subject to represent fine details and transparency.\"}",
+      "negative_prompt": "",
+      "vae": [
+        "4",
+        0
+      ],
+      "images.image_1": [
+        "1",
+        0
+      ],
+      "width": 0,
+      "height": 0,
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "The fixed matte instruction, with the picture"
+    }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "5",
+        2
+      ],
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "Sampler (4 steps, CFG 1, euler / simple)"
+    }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "The matte (white = the subject)"
+    }
+  },
+  "8": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "The picture size"
+    }
+  },
+  "9": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "7",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": [
+        "8",
+        0
+      ],
+      "height": [
+        "8",
+        1
+      ],
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "The matte at the picture size (lanczos)"
+    }
+  },
+  "10": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": [
+        "9",
+        0
+      ],
+      "channel": "red"
+    },
+    "_meta": {
+      "title": "Matte to mask"
+    }
+  },
+  "11": {
+    "class_type": "InvertMask",
+    "inputs": {
+      "mask": [
+        "10",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Invert (JoinImageWithAlpha takes 1 = clear)"
+    }
+  },
+  "12": {
+    "class_type": "JoinImageWithAlpha",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "alpha": [
+        "11",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "The picture with the matte as alpha"
+    }
+  },
+  "13": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ],
+      "filename_prefix": "fuobe/bg-remove-rmbg3"
+    },
+    "_meta": {
+      "title": "Save Image (RGBA)"
+    }
+  }
+}
