@@ -738,7 +738,6 @@ const open: ModelDef[] = [
     family: "bria",
     kind: "image",
     tagline: "The finest cut-outs: every person kept, holes and mesh cleared, soft natural edges · 32 GB GPU",
-    badges: ["new", "top"],
     routes: [comfy("bg-remove", "bg-remove-rmbg3", "RMBG-3.0 matte in 4 steps, applied at full size")],
     options: {},
   }),
