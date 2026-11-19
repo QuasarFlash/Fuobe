@@ -59,6 +59,9 @@ export function LiveMirror({ onPhrase, onStop }: { onPhrase: (phrase: string) =>
         await el.play();
         reader = await ready;
       } catch (e) {
+        // The camera goes off while the panel says how to go on.
+        stream.getTracks().forEach((t) => t.stop());
+        void ready.then((r) => r.close(), () => {});
         if (alive) setState({ s: "problem", why: e && typeof e === "object" && "name" in e && (e as { name: string }).name === "NotAllowedError" ? "blocked" : "load" });
         return;
       }
