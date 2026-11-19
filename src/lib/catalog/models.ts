@@ -470,6 +470,21 @@ const open: ModelDef[] = [
     ],
     options: { maxImages: 1, seed: true },
   }),
+  // MOSS AnyPaint: MOSS-Image Base with the AnyPaint and 8-step DMD2 LoRAs on the moss-anypaint nodes. No `new`: it stays
+  // out of Inpaint's Best list until those nodes are on the validation server.
+  o({
+    id: "oss-moss-anypaint",
+    name: "MOSS AnyPaint",
+    vendor: "OpenMOSS",
+    family: "moss",
+    kind: "image",
+    tagline: "Repaints any shape you mask or extends the canvas, and keeps the rest of the picture · 16 GB GPU · needs the MOSS AnyPaint add-on",
+    routes: [
+      comfy("inpaint", "moss-anypaint-inpaint", "MOSS-Image Base + AnyPaint LoRA, 8 steps; white = generate, black = keep"),
+      comfy("outpaint", "moss-anypaint-outpaint", "the canvas grown by the pads, the new margins generated in 8 steps"),
+    ],
+    options: { maxImages: 1, seed: true },
+  }),
 
   // ---------------- Image
   o({

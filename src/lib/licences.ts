@@ -633,6 +633,13 @@ export const NODE_PACKS: NodePack[] = [
     url: SPDX("MIT"),
     note: "Ostris' Krea 2 edit nodes (Krea 2 Inpaint); MIT code. The inpaint LoRA it runs is under the Krea 2 Community License",
   }),
+  // MOSS AnyPaint, pinned in workflows/comfyui/packs.json.
+  pack("moss-anypaint", "https://github.com/alexw5702-afk/moss-anypaint/tree/b1df126d2546acbd450f29913c56f66d59b969ae", {
+    name: "MIT",
+    class: "commercial",
+    url: SPDX("MIT"),
+    note: "The MOSS AnyPaint nodes (canvas, reference and model patch over core MOSS-Image); MIT code. The AnyPaint and 8-step DMD2 LoRAs it runs are Apache-2.0",
+  }),
   // MiniMax H3 video (minimax-h3-t2v / i2v / flf2v), pinned in install-comfyui.sh.
   pack("ComfyUI-MiniMax-H3-Turbo", "https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo/tree/77bfa67575b14e3be6214f1747732e540c68b5dd", {
     name: "Apache-2.0",

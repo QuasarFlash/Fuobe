@@ -95,9 +95,12 @@ describe("catalog order: the owner's ranking", () => {
     before("oss-krea2-inpaint", "oss-flux-fill");
   });
 
-  it("MOSS-Image is main's one model, listed once", () => {
-    expect(openIds.filter((id) => id.startsWith("oss-moss"))).toEqual(["oss-moss-image"]);
+  it("MOSS-Image is main's one text to image model, listed once; MOSS AnyPaint follows the Krea 2 Inpaint", () => {
+    expect(openIds.filter((id) => id.startsWith("oss-moss"))).toEqual(["oss-moss-image", "oss-moss-anypaint"]);
     expect(getModel("oss-moss-image")!.routes.map((r) => r.endpoint)).toEqual(["moss-image-t2i"]);
+    expect(getModel("oss-moss-anypaint")!.routes.map((r) => r.op)).toEqual(["inpaint", "outpaint"]);
+    before("oss-krea2-inpaint", "oss-moss-anypaint");
+    before("oss-moss-anypaint", "oss-flux-fill");
   });
 });
 
